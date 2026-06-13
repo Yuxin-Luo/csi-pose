@@ -140,6 +140,10 @@ cd firmware/rx && idf.py set-target esp32s3 build flash    # RX 3대
 모듈이고, 같은 영역의 루트 스크립트(`bridge.py`, `train.py` 등)는 CLI 래퍼다.
 코드 주석의 "설계 §N"·"스펙 …"은 내부 설계 문서의 절 번호다.
 
+## 저자
+
+Kyung-Bo Kim, Hyeon-Seok Jang, So-Hyeon Kim, Gyu-Chae Jung (기여도 순).
+
 ## 출처 및 라이선스 고지
 
 - **`train/csi_train/model.py`** 는 [geekfeiw/WiSPPN](https://github.com/geekfeiw/WiSPPN)의

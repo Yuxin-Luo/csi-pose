@@ -165,6 +165,11 @@ Naming convention: `csi_*` directories (`csi_host/`, `csi_pipe/`, `csi_train/`,
 Note: code comments and CLI help strings are written in Korean. "설계 §N" /
 "스펙 …" in comments refer to section numbers of an internal design document.
 
+## Authors
+
+Kyung-Bo Kim, Hyeon-Seok Jang, So-Hyeon Kim, and Gyu-Chae Jung
+(listed by contribution).
+
 ## Attribution & license notices
 
 - **`train/csi_train/model.py`** is an unofficial modified implementation based
