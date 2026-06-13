@@ -152,7 +152,7 @@ $$\mathcal{L}=\frac{1}{|\Omega|}\sum_{(u,v)\in\Omega}w_{uv}\lVert\hat{Y}_{uv}-Y_
 
 $$\mathrm{PCK@}\alpha=\mathbb{E}_{(f,j):\,c_{fj}\ge0.3}\big[\mathbb{1}(\lVert\hat{p}_{fj}-p_{fj}\rVert_2\le\alpha D_f)\big]$$
 
-$$D_f=\mathbb{1}[\mathrm{AR}_f{<}0.8]\max(\mathrm{torso}_f,\kappa\,\mathrm{diag}_f)+\mathbb{1}[\mathrm{AR}_f{\ge}0.8]\,\mathrm{torso}_f,\qquad \kappa=\operatorname{median}_{f:\,\mathrm{AR}_f\ge1.2}\frac{\mathrm{torso}_f}{\mathrm{diag}_f}$$
+$$D_f=\mathbb{1}[\mathrm{AR}_f{<}0.8]\max(\mathrm{torso}_f,\kappa\,\mathrm{diag}_f)+\mathbb{1}[\mathrm{AR}_f{\ge}0.8]\,\mathrm{torso}_f,\qquad \kappa=\mathrm{median}_{f:\,\mathrm{AR}_f\ge1.2}\frac{\mathrm{torso}_f}{\mathrm{diag}_f}$$
 
 **클록 모델·페어링.** USB 배칭 지연은 비음(非陰)이라 (보드, 호스트) 타임스탬프 산점의
 하한 포락선이 불편 클록 변환이 된다. 영상은 실측 계통 오프셋으로 정렬:
@@ -163,7 +163,7 @@ $$\mathrm{anchor}'=t_{\text{vid}}-(\Delta_{\text{cam}}-\Delta_{\text{csi}})=t_{\
 
 **실시간 연산자** — 모델-프리 모션 에너지와 낙상 규칙 R1(0.3초 창 골반 하강 기울기):
 
-$$E(t)=\frac{1}{9}\sum_{i,j}\operatorname{std}_{s\in[t-w,\,t]}\bar{A}^{(i,j)}(s),\quad \bar{A}=\frac{1}{K}\sum_k A_k,\ \ w=0.5\text{ s}$$
+$$E(t)=\frac{1}{9}\sum_{i,j}\mathrm{std}_{s\in[t-w,\,t]}\bar{A}^{(i,j)}(s),\quad \bar{A}=\frac{1}{K}\sum_k A_k,\ \ w=0.5\text{ s}$$
 
 $$\hat{\beta}_1=\arg\min_{\beta}\sum_{s\in[t-0.3,\,t]}\big(y^{\text{hip}}_s-\beta_0-\beta_1 s\big)^2,\qquad \hat{\beta}_1>\theta_v=0.4\text{ 이면 R1 발화}$$
 
