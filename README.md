@@ -39,10 +39,10 @@ no camera is needed.
 ## System architecture
 
 <p align="center">
-  <img src="figures/fig_arch.png" alt="System architecture" width="660"><br>
+  <img src="figures/fig_arch_en.png" alt="System architecture" width="900"><br>
   <em>Three layers: RF hardware (ESP32-S3 TX/RX), native-Windows capture (single
   host clock), and WSL2 compute (training &amp; realtime). Solid = realtime path,
-  dashed = offline. (Diagram labels in Korean.)</em>
+  dashed = offline.</em>
 </p>
 
 ## What it detects
@@ -72,9 +72,9 @@ Replay-demo result: **10 of 11 staged falls detected, 2 false positives**
 > demo, **not a validated medical or safety device.**
 
 <p align="center">
-  <img src="figures/fig_fsm.png" alt="Fall-detection state machine" width="660"><br>
+  <img src="figures/fig_fsm_en.png" alt="Fall-detection state machine" width="860"><br>
   <em>The fall-detection state machine (IDLE → IMPACT → ALARM) with its rules and
-  release conditions. (Diagram labels in Korean.)</em>
+  release conditions.</em>
 </p>
 
 <p align="center">
@@ -146,20 +146,67 @@ quantities, so **inter-link phase is never used as a feature**; only amplitude
 is (intra-link phase shape is an opt-in ablation). Per-board AGC differences
 are absorbed by per-link L2 normalization.
 
+## Mathematical formulation
+
+The core of the formulation, rendered with GitHub math.
+
+**Tensorization.** The most recent $P{=}5$ packets (10 ms grid) $\times\,K{=}56$
+subcarrier amplitudes of each of the 9 links build the input tensor, with a
+general form for arbitrary array sizes:
+
+$$X[56p+k,\,i,\,j]=A^{(i,j)}_{t-(4-p)\Delta,\;k},\quad p=0\ldots4,\ \Delta=10\text{ ms}\ \Rightarrow\ X\in\mathbb{R}^{280\times3\times3}$$
+
+$$X\in\mathbb{R}^{(P\cdot K)\times N_R\times N_T},\qquad f_\theta:X\mapsto\hat{Y}\in\mathbb{R}^{3\times J\times J},\quad J=18$$
+
+**Phase sanitization.** Per-packet STO/CFO appear as a linear ramp across the
+subcarrier axis and are removed by a least-squares projection:
+
+$$\tilde{\varphi}=P\,\mathrm{unwrap}(\varphi),\qquad P=I_{56}-A(A^\top A)^{-1}A^\top,\quad A=[\,\mathbf{k}\ \ \mathbf{1}\,]\in\mathbb{R}^{56\times2}$$
+
+**Normalization** — per-link L2, then z-score, with an optional RSSI rescale:
+
+$$\hat{X}^{(i,j)}=\frac{X^{(i,j)}}{\lVert X^{(i,j)}\rVert_2},\qquad z=\frac{\hat{X}-\mu}{\sigma},\qquad \tilde{X}^{(i,j)}=\hat{X}^{(i,j)}\cdot 10^{\mathrm{RSSI}_{ij}/20}$$
+
+**Learning objective** — weighted MSE over the pose adjacency matrix, with
+presence-gated, confidence-floored weights:
+
+$$\mathcal{L}=\frac{1}{|\Omega|}\sum_{(u,v)\in\Omega}w_{uv}\lVert\hat{Y}_{uv}-Y_{uv}\rVert_2^2,\qquad w=\mathbb{1}[\text{presence}]\cdot\max(\hat{c}_{\mathrm{gt}},\,0.2)$$
+
+**Evaluation** — PCK@$\alpha$ with a lying-robust denominator $D_f$:
+
+$$\mathrm{PCK@}\alpha=\mathbb{E}_{(f,j):\,c_{fj}\ge0.3}\big[\mathbb{1}(\lVert\hat{p}_{fj}-p_{fj}\rVert_2\le\alpha D_f)\big]$$
+
+$$D_f=\mathbb{1}[\mathrm{AR}_f{<}0.8]\max(\mathrm{torso}_f,\kappa\,\mathrm{diag}_f)+\mathbb{1}[\mathrm{AR}_f{\ge}0.8]\,\mathrm{torso}_f,\qquad \kappa=\operatorname{median}_{f:\,\mathrm{AR}_f\ge1.2}\frac{\mathrm{torso}_f}{\mathrm{diag}_f}$$
+
+**Clock model & pairing.** USB batching delay is non-negative, so the lower
+envelope of the (board, host) timestamp scatter is the unbiased clock transform;
+video is aligned by a measured systematic offset:
+
+$$t^{\text{host}}=(1+\rho)\,t^{\text{esp}}+\beta+\delta_{\text{usb}}+\varepsilon,\quad \delta_{\text{usb}}\ge0\ \Rightarrow\ \text{lower-envelope fit}$$
+
+$$\mathrm{anchor}'=t_{\text{vid}}-(\Delta_{\text{cam}}-\Delta_{\text{csi}})=t_{\text{vid}}-156.12\text{ ms}$$
+
+**Realtime operators** — model-free motion energy, and the fall rule R1 (hip
+descent slope over a 0.3 s window):
+
+$$E(t)=\frac{1}{9}\sum_{i,j}\operatorname{std}_{s\in[t-w,\,t]}\bar{A}^{(i,j)}(s),\quad \bar{A}=\frac{1}{K}\sum_k A_k,\ \ w=0.5\text{ s}$$
+
+$$\hat{\beta}_1=\arg\min_{\beta}\sum_{s\in[t-0.3,\,t]}\big(y^{\text{hip}}_s-\beta_0-\beta_1 s\big)^2,\qquad \text{R1 fires when }\hat{\beta}_1>\theta_v=0.4$$
+
 ## Model
 
 <p align="center">
-  <img src="figures/fig_model.png" alt="WiSPPN-ESP model" width="720"><br>
+  <img src="figures/fig_model_en.png" alt="WiSPPN-ESP model" width="900"><br>
   <em>WiSPPN-ESP — a ResNet-18-style encoder over the (280,3,3) CSI amplitude
   tensor, ending in either a PAM decode head (18×18 adjacency matrix) or a vector
-  head that regresses the 18 joint coordinates directly. (Diagram labels in Korean.)</em>
+  head that regresses the 18 joint coordinates directly.</em>
 </p>
 
 ## Results
 
 > Single session, single subject, single room (time-ordered 80/20 split). These
-> are working-demo numbers, not a cross-environment benchmark — see the
-> [technical report](#technical-report) for the full scope and limitations.
+> are working-demo numbers, not a cross-environment benchmark — cross-session
+> and lying-subset evaluation are left to a fuller data campaign.
 
 <p align="center">
   <img src="figures/fig3_motion_correlation.png" alt="CSI–motion correlation" width="560"><br>
@@ -236,17 +283,9 @@ Naming convention: `csi_*` directories (`csi_host/`, `csi_pipe/`, `csi_train/`,
 Note: code comments and CLI help strings are written in Korean. "설계 §N" /
 "스펙 …" in comments refer to section numbers of an internal design document.
 
-## Technical report
-
-A full 25-page technical report — system design, mathematical formulation
-(26 equations), the data-collection layer, time alignment, the teacher/student
-pipeline, the fall state machine, and measured M0–M3 results — is attached to the
-release: **[Technical report (PDF, Korean)](https://github.com/sel00000/csi-pose/releases/tag/paper-2026-06-12)**.
-
 ## Authors
 
-Kyung-Bo Kim, Hyeon-Seok Jang, So-Hyeon Kim, and Gyu-Chae Jung
-(listed by contribution).
+Kyung-Bo Kim, Hyeon-Seok Jang, So-Hyeon Kim, and Gyu-Chae Jung.
 
 ## Attribution & license notices
 
