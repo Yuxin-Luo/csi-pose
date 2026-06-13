@@ -172,7 +172,7 @@ presence-gated, confidence-floored weights:
 
 $$\mathcal{L}=\frac{1}{|\Omega|}\sum_{(u,v)\in\Omega}w_{uv}\lVert\hat{Y}_{uv}-Y_{uv}\rVert_2^2,\qquad w=\mathbb{1}[\text{presence}]\cdot\max(\hat{c}_{\mathrm{gt}},\,0.2)$$
 
-**Evaluation** — PCK@$\alpha$ with a lying-robust denominator $D_f$:
+**Evaluation** — $\mathrm{PCK@}\alpha$ with a lying-robust denominator $D_f$:
 
 $$\mathrm{PCK@}\alpha=\mathbb{E}_{(f,j):\,c_{fj}\ge0.3}\big[\mathbb{1}(\lVert\hat{p}_{fj}-p_{fj}\rVert_2\le\alpha D_f)\big]$$
 
