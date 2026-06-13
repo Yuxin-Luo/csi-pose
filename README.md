@@ -146,6 +146,43 @@ quantities, so **inter-link phase is never used as a feature**; only amplitude
 is (intra-link phase shape is an opt-in ablation). Per-board AGC differences
 are absorbed by per-link L2 normalization.
 
+## Data-collection protocol
+
+How the room was **systematically sampled**, and how one operator + one subject
+ran a capture with keyboard-marked segments (the `m15-cap1` session, ~13 min).
+
+<p align="center">
+  <img src="figures/capture-grid.png" alt="Data-collection grid" width="640"><br>
+  <em>The room is sampled on a fixed 3×3 grid so the dataset covers both location
+  and body orientation.</em>
+</p>
+
+**Room sampling.** The room is divided into a **3×3 grid of 9 standing positions**
+(0.85 m east–west × 1.15 m north–south), centered on the TX–RX line of sight. The
+subject visits them in order **1 → 9**; at each position they **rotate through four
+facings — N, E, S, W (~10 s each)**, so the dataset spans both *where* the person is
+and *which way* they face. A mat at the center is used for the sit / lie / fall
+segments.
+
+**Keyboard-marked segments (13 total).** The operator presses **Enter** to mark the
+start and end of every segment; walking and entering/leaving happen *outside* the
+marks, so exact timing is flexible.
+
+| # | Segment | Duration | Notes |
+|---|---|---|---|
+| 1 | empty (lead-in) | 60 s | confirm the room is empty, then cue "come in" |
+| 2–10 | standing, positions 1–9 | 40 s each | settle on the cross → **Enter** → face N / E / S / W (~10 s each) → **Enter** → next |
+| 11 | sit on the mat (pos 5) | 40 s | |
+| 12 | lie on the mat | 60 s | head points **North** |
+| 13 | empty (tail) | 60 s | subject leaves, door closed — final **Enter** required |
+
+The two **empty-room segments** (1 and 13) become the `presence = 0` negative samples
+used in training; the logger auto-closes after segment 13 (`segments = 13,
+aborted = False`).
+
+> **Capture rules.** Never `Ctrl-C` the logger mid-segment (it aborts that segment);
+> run nothing else on the capture host (CPU load starves the serial buffers).
+
 ## Mathematical formulation
 
 The core of the formulation, rendered with GitHub math.
