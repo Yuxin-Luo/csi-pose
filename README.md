@@ -29,6 +29,32 @@ no camera is needed.
 ⑤ rt/        real-time pose estimation (~20Hz) + fall-detection demo
 ```
 
+## What it detects
+
+The model outputs a continuous 18-joint 2D skeleton; two higher-level signals
+are derived on top of it:
+
+- **Posture — standing vs. lying down.** Classified from the aspect ratio of
+  the estimated skeleton's core bounding box (roughly: box taller than wide =
+  standing, wider than tall = lying). The standing→lying transition is also one
+  of the fall cues below.
+- **Falls.** A rule-based finite state machine (IDLE → IMPACT → ALARM). An
+  IMPACT is raised when ≥2 of 3 cues fire — (R1) fast pelvis/hip descent,
+  (R2) a standing→lying transition, (R3) the head dropping into the lower part
+  of the frame — and is promoted to an ALARM only if a sustained "lying & still"
+  posture is then confirmed over a hold window. Recovery (standing back up, or
+  leaving the area) releases the alarm.
+
+Replay-demo result: **10 of 11 staged falls detected, 2 false positives**
+(single session).
+
+> **Honest scope.** The fall thresholds are provisional, calibrated from a
+> single session (`fall-demo-01`); quantitative lying-subset and cross-session
+> evaluation are deferred to a fuller data campaign. The CSI-based stillness
+> check is currently disabled (per-posture motion-energy distributions
+> overlapped), so confirmation relies on pose geometry. Treat this as a working
+> demo, **not a validated medical or safety device.**
+
 ## Key idea 1 — Time synchronization (aligning heterogeneous clocks)
 
 The boards' esp_timer clocks are independent of each other and of the host.
