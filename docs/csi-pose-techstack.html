@@ -1,0 +1,1690 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>csi-pose 技术栈总览 · CSI→训练→跌倒检测</title>
+<style>
+/* ===== Reset & Base ===== */
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 64px; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+               "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.65;
+  color: #1f2328;
+  background: #ffffff;
+  -webkit-font-smoothing: antialiased;
+}
+code, pre, kbd, samp {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+               "Liberation Mono", monospace;
+  font-size: 0.875em;
+}
+
+/* ===== Layout ===== */
+.wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
+main { padding-top: 32px; padding-bottom: 96px; }
+section { margin: 64px 0; }
+hr { border: 0; border-top: 1px solid #d0d7de; margin: 48px 0; }
+
+/* ===== Header ===== */
+.site-header {
+  background: linear-gradient(180deg, #f6f8fa 0%, #ffffff 100%);
+  border-bottom: 1px solid #d0d7de;
+  padding: 48px 0 32px;
+}
+.site-header .eyebrow {
+  font-size: 0.8125rem;
+  color: #59636e;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.site-header h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  margin: 0 0 8px;
+  letter-spacing: -0.01em;
+}
+.site-header .subtitle {
+  font-size: 1.05rem;
+  color: #59636e;
+  margin: 0 0 16px;
+}
+.site-header .meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 0.8125rem;
+  color: #59636e;
+}
+.site-header .meta span strong { color: #1f2328; font-weight: 600; }
+
+/* ===== Sticky Nav ===== */
+.sticky-nav {
+  position: sticky;
+  top: 0;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: saturate(180%) blur(8px);
+  -webkit-backdrop-filter: saturate(180%) blur(8px);
+  border-bottom: 1px solid #d0d7de;
+  z-index: 100;
+}
+.sticky-nav .wrap {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 12px 24px;
+}
+.sticky-nav a {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 0.875rem;
+  color: #59636e;
+  white-space: nowrap;
+}
+.sticky-nav a:hover { background: #f6f8fa; color: #1f2328; }
+
+/* ===== Typography ===== */
+h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0 0 8px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #1f2328;
+  letter-spacing: -0.01em;
+}
+h2 .anchor-num {
+  display: inline-block;
+  width: 28px;
+  height: 28px;
+  line-height: 28px;
+  text-align: center;
+  background: #1f2328;
+  color: #fff;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  margin-right: 10px;
+  vertical-align: middle;
+}
+h3 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin: 32px 0 12px;
+  color: #1f2328;
+}
+h4 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 24px 0 8px;
+  color: #1f2328;
+}
+p { margin: 12px 0; }
+a { color: #0969da; text-decoration: none; }
+a:hover { text-decoration: underline; }
+strong { font-weight: 600; color: #1f2328; }
+ul, ol { padding-left: 24px; }
+li { margin: 4px 0; }
+
+/* ===== Lead paragraph ===== */
+.lead {
+  font-size: 1.0625rem;
+  color: #1f2328;
+  padding: 16px 20px;
+  background: #f6f8fa;
+  border-left: 4px solid #0969da;
+  border-radius: 0 6px 6px 0;
+  margin: 16px 0 24px;
+}
+.lead strong { color: #0969da; }
+
+/* ===== Subsystem cards ===== */
+.subsystem-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+.subsystem {
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  padding: 14px 16px;
+  background: #fff;
+  position: relative;
+}
+.subsystem .num {
+  position: absolute;
+  top: -10px;
+  left: 12px;
+  background: #1f2328;
+  color: #fff;
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.subsystem h4 { margin: 4px 0 4px; font-size: 1rem; }
+.subsystem p { margin: 4px 0 8px; font-size: 0.875rem; color: #59636e; }
+.subsystem code {
+  font-size: 0.75rem;
+  color: #59636e;
+  background: #f6f8fa;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+/* ===== Callouts ===== */
+.callout {
+  margin: 16px 0;
+  padding: 12px 16px;
+  border-left: 4px solid #d0d7de;
+  background: #f6f8fa;
+  border-radius: 0 6px 6px 0;
+  font-size: 0.9375rem;
+}
+.callout-icon {
+  display: inline-block;
+  margin-right: 8px;
+  font-weight: 700;
+}
+.callout.design   { border-left-color: #0969da; }
+.callout.design .callout-icon { color: #0969da; }
+.callout.warning  { border-left-color: #cf222e; background: #fff5f5; }
+.callout.warning .callout-icon { color: #cf222e; }
+.callout.ok       { border-left-color: #1a7f37; background: #f0fdf4; }
+.callout.ok .callout-icon { color: #1a7f37; }
+.callout.review   { border-left-color: #9a6700; background: #fffbf0; }
+.callout.review .callout-icon { color: #9a6700; }
+.callout.scope    { border-left-color: #59636e; }
+.callout.scope .callout-icon { color: #59636e; }
+
+/* ===== Code blocks ===== */
+pre {
+  background: #f6f8fa;
+  border-left: 4px solid #0969da;
+  border-radius: 0 6px 6px 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  line-height: 1.5;
+  margin: 12px 0;
+}
+pre code { color: #1f2328; }
+.code-title {
+  font-size: 0.8125rem;
+  color: #59636e;
+  margin: 12px 0 0;
+  font-weight: 600;
+}
+.code-title + pre { margin-top: 4px; }
+code.inline {
+  background: #f6f8fa;
+  padding: 1px 6px;
+  border-radius: 3px;
+  color: #1f2328;
+}
+
+/* ===== Tables ===== */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 0.9375rem;
+}
+thead th {
+  background: #f6f8fa;
+  border-bottom: 2px solid #d0d7de;
+  text-align: left;
+  padding: 8px 12px;
+  font-weight: 600;
+}
+tbody td {
+  border-bottom: 1px solid #d0d7de;
+  padding: 8px 12px;
+  vertical-align: top;
+}
+tbody tr:nth-child(even) td { background: #f6f8fa; }
+tbody tr:hover td { background: #eaeef2; }
+
+/* ===== Figure / SVG ===== */
+figure {
+  margin: 16px 0;
+  text-align: center;
+}
+figure img, figure svg {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #fff;
+}
+figure figcaption {
+  font-size: 0.875rem;
+  color: #59636e;
+  margin-top: 8px;
+  padding: 0 16px;
+}
+
+/* ===== Math inline ===== */
+.math {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  background: #f6f8fa;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 0.9375em;
+  color: #1f2328;
+}
+.math-block {
+  display: block;
+  text-align: center;
+  margin: 12px 0;
+  font-family: ui-monospace, monospace;
+  background: #f6f8fa;
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-size: 0.9375rem;
+}
+
+/* ===== Lists / Definition ===== */
+dl { margin: 12px 0; }
+dt {
+  font-weight: 600;
+  margin-top: 12px;
+  color: #1f2328;
+}
+dd { margin: 4px 0 4px 16px; color: #1f2328; }
+
+/* ===== Stat blocks ===== */
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+.stat {
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  padding: 12px 16px;
+  background: #f6f8fa;
+}
+.stat .label {
+  font-size: 0.75rem;
+  color: #59636e;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+.stat .value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1f2328;
+  font-family: ui-monospace, monospace;
+}
+.stat .note { font-size: 0.75rem; color: #59636e; margin-top: 4px; }
+
+/* ===== Decision trace table ===== */
+.trace th { font-size: 0.875rem; }
+.trace td { font-size: 0.875rem; }
+
+/* ===== Footer ===== */
+footer {
+  border-top: 1px solid #d0d7de;
+  padding: 24px 0;
+  color: #59636e;
+  font-size: 0.8125rem;
+  background: #f6f8fa;
+}
+footer p { margin: 4px 0; }
+
+/* ===== Responsive ===== */
+@media (max-width: 600px) {
+  .site-header h1 { font-size: 1.5rem; }
+  .sticky-nav .wrap { padding: 10px 16px; }
+  .sticky-nav a { font-size: 0.8125rem; padding: 5px 8px; }
+  section { margin: 40px 0; }
+  h2 { font-size: 1.25rem; }
+  h3 { font-size: 1.05rem; }
+  .wrap { padding: 0 16px; }
+}
+
+/* ===== Print ===== */
+@media print {
+  .sticky-nav { display: none; }
+  body { font-size: 11pt; }
+  section { page-break-inside: avoid; }
+  pre, figure { page-break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap">
+    <div class="eyebrow">csi-pose · 技术栈总览</div>
+    <h1>CSI → 特征 → 训练 → 跌倒检测 全链路</h1>
+    <p class="subtitle">基于 6 块 ESP32-S3 的 WiFi CSI 人体姿态估计 + 规则式跌倒检测</p>
+    <div class="meta">
+      <span><strong>受众</strong> 团队内部技术文档</span>
+      <span><strong>更新</strong> 2026-07-06</span>
+      <span><strong>阅读</strong> ~25 min</span>
+      <span><strong>源码</strong> <code>ReferenceCode/Opensourse/csi-pose</code></span>
+    </div>
+  </div>
+</header>
+
+<nav class="sticky-nav">
+  <div class="wrap">
+    <a href="#sec-overview">① 全景</a>
+    <a href="#sec-hw">② 硬件</a>
+    <a href="#sec-clock">③ 时钟同步</a>
+    <a href="#sec-teacher">④ 教师标签</a>
+    <a href="#sec-features">⑤ 特征工程</a>
+    <a href="#sec-model">⑥ 模型架构</a>
+    <a href="#sec-train">⑦ 训练</a>
+    <a href="#sec-rt">⑧ 实时 + 跌倒 FSM</a>
+    <a href="#sec-appendix">附录</a>
+  </div>
+</nav>
+
+<main>
+<div class="wrap">
+
+<!-- ============================================================ -->
+<section id="sec-overview">
+  <h2><span class="anchor-num">1</span>系统全景</h2>
+
+  <p class="lead">
+    <strong>一句话</strong>：把 WiFi CSI（信道状态信息）的振幅张量当成"身体的无线电影子"，
+    训练一个神经网络从中回归出 18 关节 2D 坐标；再在姿态之上叠加规则式状态机做跌倒检测。
+  </p>
+
+  <p>
+    csi-pose 把 Intel 5300 上的 WiSPPN（3×3 <em>天线矩阵</em>）移植到 6 块 ESP32-S3 上（3TX×3RX = 9 链路，
+    <em>链路矩阵</em>）。<strong>摄像头只在采集阶段用</strong>——RTMDet+RTMPose 当教师打伪标签，
+    训练完成后推断只需 CSI，不再需要摄像头。
+  </p>
+
+  <div class="subsystem-grid">
+    <div class="subsystem">
+      <span class="num">① firmware</span>
+      <h4>固件</h4>
+      <p>3 块 ESP32-S3 TX 广播 ESP-NOW beacon（~103 pps），3 块 RX 提取 CSI → 130B 帧走串口</p>
+      <code>firmware/tx · firmware/rx · csi_link</code>
+    </div>
+    <div class="subsystem">
+      <span class="num">② host</span>
+      <h4>采集 + 时钟</h4>
+      <p>bridge 串口→日志，MQTT 中继；recorder 写 HDF5；csi_pipe 做时钟拟合/对齐/采样</p>
+      <code>host/{bridge,csi_pipe,recorder}</code>
+    </div>
+    <div class="subsystem">
+      <span class="num">③ teacher</span>
+      <h4>教师标签</h4>
+      <p>同步录的 webcam → RTMDet-m（人检测）→ RTMPose-m（17 关节）→ BODY-18</p>
+      <code>teacher/teacher.py</code>
+    </div>
+    <div class="subsystem">
+      <span class="num">④ train</span>
+      <h4>训练</h4>
+      <p>WiSPPN-ESP：CSI 振幅张量 → PAM（Pose Appearance Map，18 关节回归）</p>
+      <code>train/train.py · csi_train/{data,model,loss,fit}</code>
+    </div>
+    <div class="subsystem">
+      <span class="num">⑤ rt</span>
+      <h4>实时推理</h4>
+      <p>~20Hz 姿态估计 + 规则式跌倒 FSM（IDLE → IMPACT → ALARM）</p>
+      <code>rt/demo.py · csi_rt/{infer,fall,sources}</code>
+    </div>
+  </div>
+
+  <figure>
+    <img src="figures/fig_arch_en.png" alt="csi-pose 系统架构图">
+    <figcaption>三层：RF 硬件（ESP32-S3 TX/RX）、Windows 原生采集（单一主机时钟）、WSL2 训练/实时（实线 = 实时路径，虚线 = 离线）。来源：README。</figcaption>
+  </figure>
+
+  <div class="callout design">
+    <span class="callout-icon">💡</span>
+    <strong>关键决策点</strong>：教师只在采集阶段用。一旦训练好模型，CSI 就能在没有摄像头的环境下独立估计姿态，
+    跌倒检测也只在 CSI 流上运行。这是项目最核心的"为什么"。
+  </div>
+</section>
+
+<hr>
+
+<!-- ============================================================ -->
+<section id="sec-hw">
+  <h2><span class="anchor-num">2</span>硬件拓扑（浅）</h2>
+
+  <h3>2.1 3TX × 3RX 链路矩阵</h3>
+
+  <p>
+    6 块 ESP32-S3 物理上分离，每块都是独立的 NIC。3 个 TX + 3 个 RX 形成 9 条无线链路，
+    即 <strong>3×3 link matrix</strong>（不是单 NIC 的 antenna matrix）。
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 460 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="3x3 link matrix">
+      <style>
+        .rx-box { fill: #f6f8fa; stroke: #1f2328; stroke-width: 1.5; }
+        .tx-box { fill: #f6f8fa; stroke: #1f2328; stroke-width: 1.5; }
+        .link   { stroke: #0969da; stroke-width: 1.2; fill: none; }
+        .link.active { stroke: #cf222e; stroke-width: 2; }
+        .node-label { font: 600 14px sans-serif; fill: #1f2328; text-anchor: middle; }
+        .node-sub   { font: 11px monospace; fill: #59636e; text-anchor: middle; }
+        .idx { font: 11px monospace; fill: #59636e; }
+        .title { font: 700 13px sans-serif; fill: #1f2328; }
+      </style>
+      <text x="230" y="22" class="title" text-anchor="middle">3 TX × 3 RX = 9 links (channel matrix)</text>
+
+      <!-- TX nodes (top) -->
+      <rect class="tx-box" x="60"  y="50" width="60" height="40" rx="6"/>
+      <rect class="tx-box" x="200" y="50" width="60" height="40" rx="6"/>
+      <rect class="tx-box" x="340" y="50" width="60" height="40" rx="6"/>
+      <text class="node-label" x="90"  y="75">TX₁</text>
+      <text class="node-sub"   x="90"  y="106">tx_idx=0</text>
+      <text class="node-label" x="230" y="75">TX₂</text>
+      <text class="node-sub"   x="230" y="106">tx_idx=1</text>
+      <text class="node-label" x="370" y="75">TX₃</text>
+      <text class="node-sub"   x="370" y="106">tx_idx=2</text>
+
+      <!-- RX nodes (bottom) -->
+      <rect class="rx-box" x="60"  y="190" width="60" height="40" rx="6"/>
+      <rect class="rx-box" x="200" y="190" width="60" height="40" rx="6"/>
+      <rect class="rx-box" x="340" y="190" width="60" height="40" rx="6"/>
+      <text class="node-label" x="90"  y="215">RX₁</text>
+      <text class="node-sub"   x="90"  y="246">rx_id=0</text>
+      <text class="node-label" x="230" y="215">RX₂</text>
+      <text class="node-sub"   x="230" y="246">rx_id=1</text>
+      <text class="node-label" x="370" y="215">RX₃</text>
+      <text class="node-sub"   x="370" y="246">rx_id=2</text>
+
+      <!-- 9 links -->
+      <!-- (rx0, tx0..2) -->
+      <line class="link" x1="90"  y1="90"  x2="90"  y2="190"/>
+      <line class="link" x1="90"  y1="90"  x2="230" y2="190"/>
+      <line class="link" x1="90"  y1="90"  x2="370" y2="190"/>
+      <!-- (rx1, tx0..2) -->
+      <line class="link active" x1="230" y1="90"  x2="90"  y2="190"/>
+      <line class="link active" x1="230" y1="90"  x2="230" y2="190"/>
+      <line class="link active" x1="230" y1="90"  x2="370" y2="190"/>
+      <!-- (rx2, tx0..2) -->
+      <line class="link" x1="370" y1="90"  x2="90"  y2="190"/>
+      <line class="link" x1="370" y1="90"  x2="230" y2="190"/>
+      <line class="link" x1="370" y1="90"  x2="370" y2="190"/>
+
+      <!-- Link index example -->
+      <text class="idx" x="155" y="145">link (0,1)</text>
+      <text class="idx" x="260" y="155">link (1,1) highlighted</text>
+      <text class="idx" x="395" y="145">link (2,2)</text>
+    </svg>
+    <figcaption>3×3 link matrix 示意。每个 (rx_i, tx_j) 对是一条独立无线链路，对应 CSI 帧中一个 56 子载波向量。</figcaption>
+  </figure>
+
+  <h3>2.2 房间布局</h3>
+
+  <figure>
+    <img src="figures/room-layout.png" alt="测量房间布局">
+    <figcaption>3.45 × 5.65 m。TX 阵列在下方朝上，RX+摄像头簇在上方朝下，二者沿长轴对望；中央床垫是跌倒触发点。</figcaption>
+  </figure>
+
+  <h3>2.3 关键约束</h3>
+
+  <table>
+    <thead>
+      <tr><th>参数</th><th>值</th><th>含义</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>HT 模式</td><td>HT20</td><td>20 MHz 信道</td></tr>
+      <tr><td>子载波数 K</td><td>56</td><td>可用数据副载波（剔除 4 个 pilot + 12 个空）</td></tr>
+      <tr><td>TX 速率</td><td>~103 pps</td><td>ESP-NOW beacon 周期 ~9.7 ms</td></tr>
+      <tr><td>链路总数</td><td>9</td><td>3TX × 3RX</td></tr>
+      <tr><td>原始吞吐</td><td>~927 pkt/s</td><td>9 链路 × 103 pps</td></tr>
+      <tr><td>帧大小</td><td>130 B</td><td>ESP32-S3 输出的 CSI 帧</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout warning">
+    <span class="callout-icon">⚠️</span>
+    <strong>link matrix ≠ antenna matrix</strong>：单 NIC 多天线共享同一晶振，可恢复相位差；
+    这里 6 块板子各自独立晶振，<strong>跨链路相位差是随机量</strong>，所以只能用振幅。
+  </div>
+</section>
+
+<hr>
+
+<!-- ============================================================ -->
+<section id="sec-clock">
+  <h2><span class="anchor-num">3</span>时钟同步（中）</h2>
+
+  <p>
+    板子的 <code>esp_timer</code> 彼此独立、也和主机独立。每包到达都用单一主机时钟 <code>time.time_ns()</code> 打戳，
+    但 USB 串口延迟会让包迟到。<strong>关键观察</strong>：USB 延迟只能让包<strong>迟到</strong>、不能<strong>早到</strong>。
+    因此 <span class="math">(t_esp, t_host)</span> 散点的<strong>下包络（lower convex hull）</strong>就是时钟变换的无偏估计。
+  </p>
+
+  <h3>3.1 时钟模型</h3>
+
+  <div class="math-block">
+    t_host = (1 + ρ) · t_esp + β + δ_usb + ε, &nbsp;&nbsp; δ_usb ≥ 0
+  </div>
+
+  <p>
+    其中 <code>ρ</code> 是晶振频率偏差（ppm 级），<code>β</code> 是常数偏移，<code>δ_usb</code> 是 USB 串口批处理延迟（非负）。
+    取下包络等于假设 <code>δ_usb = 0</code>。
+  </p>
+
+  <h3>3.2 拟合策略</h3>
+
+  <p>按 <code>window_s = 600 s</code> 分段做最小二乘（窗口中心 <code>centers_s</code>），窗口间线性插值吸收温度漂移：</p>
+
+  <ol>
+    <li>按 1 s 桶取每个桶内最小延迟（抑制单侧抖动）</li>
+    <li>对桶代表点求下凸包（monotone chain 下沿）</li>
+    <li>每个 600 s 窗口内做一次 1 阶多项式拟合（<code>α, β</code>）</li>
+    <li>窗口中心间线性插值（外推到首尾窗口）</li>
+    <li>按 <code>boot_id</code> 切分 epoch（重启 = 新时钟）</li>
+  </ol>
+
+  <figure>
+    <svg viewBox="0 0 480 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="下包络时钟拟合">
+      <style>
+        .axis  { stroke: #1f2328; stroke-width: 1; }
+        .grid  { stroke: #eaeef2; stroke-width: 1; }
+        .point { fill: #0969da; }
+        .hull  { fill: none; stroke: #cf222e; stroke-width: 2; }
+        .label { font: 12px sans-serif; fill: #1f2328; }
+        .mono  { font: 11px monospace; fill: #59636e; }
+      </style>
+      <line class="axis" x1="40" y1="220" x2="460" y2="220"/>
+      <line class="axis" x1="40" y1="40"  x2="40"  y2="220"/>
+
+      <!-- grid -->
+      <line class="grid" x1="40"  y1="170" x2="460" y2="170"/>
+      <line class="grid" x1="40"  y1="120" x2="460" y2="120"/>
+      <line class="grid" x1="40"  y1="70"  x2="460" y2="70"/>
+      <line class="grid" x1="150" y1="40"  x2="150" y2="220"/>
+      <line class="grid" x1="260" y1="40"  x2="260" y2="220"/>
+      <line class="grid" x1="370" y1="40"  x2="370" y2="220"/>
+
+      <!-- scatter points (with positive delay) -->
+      <g class="point">
+        <!-- Will draw ~40 points via JS-free inline -->
+      </g>
+
+      <!-- Inline scatter: 36 points -->
+      <g fill="#0969da">
+        <circle cx="60"  cy="200" r="2"/><circle cx="60"  cy="208" r="2"/>
+        <circle cx="80"  cy="195" r="2"/><circle cx="80"  cy="205" r="2"/>
+        <circle cx="100" cy="190" r="2"/><circle cx="100" cy="200" r="2"/>
+        <circle cx="120" cy="185" r="2"/><circle cx="120" cy="195" r="2"/>
+        <circle cx="140" cy="180" r="2"/><circle cx="140" cy="195" r="2"/>
+        <circle cx="160" cy="172" r="2"/><circle cx="160" cy="190" r="2"/>
+        <circle cx="180" cy="167" r="2"/><circle cx="180" cy="188" r="2"/>
+        <circle cx="200" cy="160" r="2"/><circle cx="200" cy="183" r="2"/>
+        <circle cx="220" cy="155" r="2"/><circle cx="220" cy="178" r="2"/>
+        <circle cx="240" cy="148" r="2"/><circle cx="240" cy="172" r="2"/>
+        <circle cx="260" cy="142" r="2"/><circle cx="260" cy="167" r="2"/>
+        <circle cx="280" cy="135" r="2"/><circle cx="280" cy="160" r="2"/>
+        <circle cx="300" cy="128" r="2"/><circle cx="300" cy="155" r="2"/>
+        <circle cx="320" cy="120" r="2"/><circle cx="320" cy="150" r="2"/>
+        <circle cx="340" cy="113" r="2"/><circle cx="340" cy="143" r="2"/>
+        <circle cx="360" cy="105" r="2"/><circle cx="360" cy="135" r="2"/>
+        <circle cx="380" cy="97"  r="2"/><circle cx="380" cy="128" r="2"/>
+        <circle cx="400" cy="90"  r="2"/><circle cx="400" cy="120" r="2"/>
+        <circle cx="420" cy="82"  r="2"/><circle cx="420" cy="112" r="2"/>
+        <circle cx="440" cy="75"  r="2"/><circle cx="440" cy="105" r="2"/>
+      </g>
+
+      <!-- lower convex hull -->
+      <polyline class="hull" points="
+        60,200 100,190 140,180 180,167 220,155
+        260,142 300,128 340,113 380,97 420,82 440,75
+      "/>
+
+      <text class="label" x="50" y="55">δ_usb ≥ 0</text>
+      <text class="label" x="320" y="58" fill="#cf222e" font-weight="700">下包络 = 时钟真值</text>
+      <text class="mono"  x="42" y="232">t_esp (s)</text>
+      <text class="mono"  x="350" y="232">→</text>
+      <text class="mono"  x="390" y="60" transform="rotate(-90 390 60)">t_host − t_esp (μs)</text>
+    </svg>
+    <figcaption>下包络时钟拟合。蓝点 = USB 延迟散点（只能往上偏），红线 = 下凸包 = 无偏时钟线。来源：<code>host/csi_pipe/clockfit.py</code>。</figcaption>
+  </figure>
+
+  <h3>3.3 残差统计</h3>
+
+  <p>实测基线（单会话 <code>fall-demo-01</code>）：</p>
+
+  <div class="stat-row">
+    <div class="stat">
+      <div class="label">P5 残差</div>
+      <div class="value">~−2 ms</div>
+      <div class="note">说明下包络接近无偏</div>
+    </div>
+    <div class="stat">
+      <div class="label">P50 残差</div>
+      <div class="value">~+5 ms</div>
+      <div class="note">残留 USB 批处理延迟</div>
+    </div>
+    <div class="stat">
+      <div class="label">P95 残差</div>
+      <div class="value">~+18 ms</div>
+      <div class="note">极端排队情况</div>
+    </div>
+    <div class="stat">
+      <div class="label">目标网格</div>
+      <div class="value">10 ms</div>
+      <div class="note">100Hz 重采样</div>
+    </div>
+  </div>
+
+  <h3>3.4 视频-视频配对修正</h3>
+
+  <p>摄像头帧和 CSI 流的物理时间不对齐（摄像头有软件抓帧延迟），用测得的系统偏差补偿：</p>
+
+  <div class="math-block">
+    anchor' = t_vid − (Δ_cam − Δ_csi) = t_vid − 156.12 ms
+  </div>
+
+  <p>
+    "156.12 ms" 是 STOP 事件 + 监视器翻拍实测出来的常数（写入 configs/pairing.json）。
+    修正在窗口选择阶段做，但 <code>/samples/t_ns</code> 始终保留<strong>原始视频戳</strong>，便于后续 audit。
+  </p>
+
+  <div class="callout design">
+    <span class="callout-icon">💡</span>
+    <strong>±15 ms 的现实意义</strong>：跌倒瞬间人体速度 2-3 m/s，对应 3-5 cm 的标签噪声。
+    这就是为什么训练要加 confidence gating &gt; 0.2（<code>loss.py:C_FLOOR</code>）和分布平均。
+  </div>
+</section>
+
+<hr>
+
+<!-- ============================================================ -->
+<section id="sec-teacher">
+  <h2><span class="anchor-num">4</span>教师打标签（中）</h2>
+
+  <p>
+    摄像头只在采集阶段用。同步录的 webcam 视频经过 RTMDet-m（人检测）+ RTMPose-m（17 关节）→
+    转换为 BODY-18 拓扑，然后按时间戳和 CSI 窗口配对，得到训练用的 (X, Y) 对。
+  </p>
+
+  <h3>4.1 处理流水线</h3>
+
+  <figure>
+    <svg viewBox="0 0 700 90" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="teacher pipeline">
+      <defs>
+        <marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 z" fill="#1f2328"/>
+        </marker>
+      </defs>
+      <style>
+        .box { fill: #fff; stroke: #1f2328; stroke-width: 1.5; rx: 6; }
+        .box.accent { fill: #f6f8fa; stroke: #0969da; stroke-width: 2; }
+        .lbl { font: 600 12px sans-serif; fill: #1f2328; text-anchor: middle; }
+        .sub { font: 10px monospace; fill: #59636e; text-anchor: middle; }
+        .line { stroke: #1f2328; stroke-width: 1.5; fill: none; marker-end: url(#arr); }
+      </style>
+      <rect class="box" x="10"  y="20" width="100" height="50"/>
+      <rect class="box" x="140" y="20" width="120" height="50"/>
+      <rect class="box" x="290" y="20" width="120" height="50"/>
+      <rect class="box accent" x="440" y="20" width="120" height="50"/>
+      <rect class="box accent" x="590" y="20" width="100" height="50"/>
+
+      <text class="lbl" x="60"  y="42">webcam mp4</text>
+      <text class="sub" x="60"  y="58">每帧 t_ns</text>
+      <text class="lbl" x="200" y="42">RTMDet-m</text>
+      <text class="sub" x="200" y="58">人检测 bbox</text>
+      <text class="lbl" x="350" y="42">RTMPose-m</text>
+      <text class="sub" x="350" y="58">17 关节 COCO</text>
+      <text class="lbl" x="500" y="42">coco17→body18</text>
+      <text class="sub" x="500" y="58">neck 合成</text>
+      <text class="lbl" x="640" y="42">Y = PAM</text>
+      <text class="sub" x="640" y="58">(3, 18, 18)</text>
+
+      <line class="line" x1="110" y1="45" x2="140" y2="45"/>
+      <line class="line" x1="260" y1="45" x2="290" y2="45"/>
+      <line class="line" x1="410" y1="45" x2="440" y2="45"/>
+      <line class="line" x1="560" y1="45" x2="590" y2="45"/>
+    </svg>
+    <figcaption>教师流水线：webcam → 检测 → 姿态 → 拓扑转换 → PAM 张量。</figcaption>
+  </figure>
+
+  <h3>4.2 BODY-18 关节定义</h3>
+
+  <table>
+    <thead><tr><th>ID</th><th>关节</th><th>来源</th></tr></thead>
+    <tbody>
+      <tr><td>0</td><td>nose（鼻尖）</td><td>COCO-17 idx 0</td></tr>
+      <tr><td>1</td><td>neck（颈）</td><td><strong>合成</strong>：<code>(L_SHO + R_SHO) / 2</code>，c = min(c_LSHO, c_RSHO)</td></tr>
+      <tr><td>2-4</td><td>RSho, RElb, RWri（右臂）</td><td>COCO idx 6, 8, 10</td></tr>
+      <tr><td>5-7</td><td>LSho, LElb, LWri（左臂）</td><td>COCO idx 5, 7, 9</td></tr>
+      <tr><td>8-10</td><td>RHip, RKnee, RAnkle（右腿）</td><td>COCO idx 12, 14, 16</td></tr>
+      <tr><td>11-13</td><td>LHip, LKnee, LAnkle（左腿）</td><td>COCO idx 11, 13, 15</td></tr>
+      <tr><td>14-17</td><td>REye, LEye, REar, LEar（面部）</td><td>COCO idx 2, 1, 4, 3</td></tr>
+    </tbody>
+  </table>
+
+  <p>坐标存储为 <strong>归一化像素坐标</strong>（除以 W、H 存到 [0,1] 区间），训练时反归一化到像素空间计算 PCK。</p>
+
+  <h3>4.3 三类样本策略</h3>
+
+  <p>每帧三选一（<code>teacher/csi_teacher/labels.py:label_frame</code>）：</p>
+
+  <table>
+    <thead><tr><th>检测结果</th><th>status</th><th>处理</th></tr></thead>
+    <tbody>
+      <tr><td>0 个检测</td><td><code>no_person (1)</code></td><td>保留为 <strong>负样本</strong>，<code>presence=0</code></td></tr>
+      <tr><td>1 个检测</td><td><code>ok (0)</code></td><td>正常标注</td></tr>
+      <tr><td>≥2 个检测</td><td><code>multi (2)</code></td><td>丢弃</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout design">
+    <span class="callout-icon">💡</span>
+    <strong>为什么要保留空房帧？</strong>空房是负样本——CSI 振幅会因环境微小变化（空气流动、温漂）有微小波动，
+    模型必须学会把这种"无人但有扰动"的情况输出低置信度（ĉ → 0），而不是乱猜姿态。
+    损失函数中 <code>w = 𝟙[presence] · max(c_gt, 0.2)</code> 自然实现了这一点：负样本的 c_gt = 0，
+    ĉ 被训练目标拉向 0，姿态坐标项则自动屏蔽。
+  </div>
+
+  <h3>4.4 QA gate</h3>
+
+  <p>训练前随机抽 &lt; 2% 帧人工复核，确保 RTMDet/RTMPose 在该房间、该视角下的失败率可接受。
+  失败来源主要是遮挡、姿态极端（小尺寸躯干）、低光照。代码路径：<code>teacher/csi_teacher/qa.py</code>。</p>
+</section>
+
+<hr>
+
+<!-- ============================================================ -->
+<section id="sec-features">
+  <h2><span class="anchor-num">5</span>特征工程 ★（深）</h2>
+
+  <p>
+    本节是项目的核心创新点之一：从原始 CSI 帧到训练张量的所有变换都在这里。
+    代码主入口 <code>train/csi_train/data.py</code>，配合 <code>host/csi_pipe/samples.py</code>（构建窗口）。
+  </p>
+
+  <h3>5.1 输入张量构造</h3>
+
+  <p>每条 CSI 帧给出 1 个 <code>(K=56,)</code> 子载波振幅向量。沿时间轴连续取 5 包（50 ms），展平得到：</p>
+
+  <div class="math-block">
+    X[c, i, j] = A^(i,j)_{t−(4−p)·Δ, k}, &nbsp;&nbsp; c = p·56 + k, &nbsp; p = 0..4, &nbsp; Δ = 10 ms
+  </div>
+
+  <p>其中 <code>i = rx_i</code>（接收板索引 0..2）、<code>j = tx_j</code>（发送板索引 0..2）。
+  最终形状：<span class="math">X ∈ ℝ^(280×3×3)</span>，280 = 5 包 × 56 子载波。</p>
+
+  <figure>
+    <svg viewBox="0 0 700 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="tensor shape">
+      <style>
+        .blk { fill: #f6f8fa; stroke: #1f2328; stroke-width: 1; rx: 4; }
+        .blk-h { fill: #eaeef2; stroke: #1f2328; stroke-width: 1; rx: 4; }
+        .lbl { font: 600 11px sans-serif; fill: #1f2328; text-anchor: middle; }
+        .sub { font: 10px monospace; fill: #59636e; text-anchor: middle; }
+        .arrow { stroke: #1f2328; stroke-width: 1.5; fill: none; marker-end: url(#ar2); }
+      </style>
+      <defs>
+        <marker id="ar2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 z" fill="#1f2328"/>
+        </marker>
+      </defs>
+      <text class="lbl" x="100" y="20" font-size="13">50 ms = 5 packets × 56 SC × 9 links</text>
+
+      <!-- 5 packet blocks (p=0..4) -->
+      <g>
+        <rect class="blk-h" x="20"  y="50" width="120" height="40"/>
+        <rect class="blk-h" x="20"  y="95" width="120" height="40"/>
+        <rect class="blk-h" x="20"  y="140" width="120" height="40"/>
+        <rect class="blk-h" x="20"  y="185" width="120" height="20"/>
+      </g>
+      <text class="lbl" x="80" y="68">t−40 ms</text>
+      <text class="sub" x="80" y="82">p=0, k=0..55</text>
+      <text class="lbl" x="80" y="113">t−30 ms</text>
+      <text class="sub" x="80" y="127">p=1</text>
+      <text class="lbl" x="80" y="158">t−20 ms</text>
+      <text class="sub" x="80" y="172">p=2</text>
+      <text class="lbl" x="80" y="197">t−10 ms · p=4</text>
+
+      <line class="arrow" x1="155" y1="115" x2="195" y2="115"/>
+
+      <!-- Concatenated: 280 channels -->
+      <rect class="blk" x="200" y="50" width="120" height="155"/>
+      <text class="lbl" x="260" y="120" font-size="13">280 ch</text>
+      <text class="sub" x="260" y="138">flat(p·56+k)</text>
+
+      <line class="arrow" x1="325" y1="115" x2="365" y2="115"/>
+
+      <!-- 3x3 matrix (rx_i × tx_j) -->
+      <g transform="translate(370, 70)">
+        <rect class="blk" x="0"   y="0"   width="60" height="40"/>
+        <rect class="blk" x="0"   y="45"  width="60" height="40"/>
+        <rect class="blk" x="0"   y="90"  width="60" height="40"/>
+        <rect class="blk" x="70"  y="0"   width="60" height="40"/>
+        <rect class="blk" x="70"  y="45"  width="60" height="40"/>
+        <rect class="blk" x="70"  y="90"  width="60" height="40"/>
+        <rect class="blk" x="140" y="0"   width="60" height="40"/>
+        <rect class="blk" x="140" y="45"  width="60" height="40"/>
+        <rect class="blk" x="140" y="90"  width="60" height="40"/>
+
+        <text class="lbl" x="100" y="-10">[i=rx, j=tx]</text>
+        <text class="sub" x="30"  y="25">(0,0)</text>
+        <text class="sub" x="30"  y="70">(1,0)</text>
+        <text class="sub" x="30"  y="115">(2,0)</text>
+        <text class="sub" x="100" y="25">(0,1)</text>
+        <text class="sub" x="100" y="70">(1,1)</text>
+        <text class="sub" x="100" y="115">(2,1)</text>
+        <text class="sub" x="170" y="25">(0,2)</text>
+        <text class="sub" x="170" y="70">(1,2)</text>
+        <text class="sub" x="170" y="115">(2,2)</text>
+      </g>
+
+      <!-- Legend right -->
+      <g transform="translate(610, 70)">
+        <rect class="blk" x="0" y="0" width="60" height="40"/>
+        <text class="sub" x="30" y="25">rx_i</text>
+        <text class="sub" x="30" y="55">tx_j</text>
+      </g>
+    </svg>
+    <figcaption>输入张量 X ∈ ℝ^(280×3×3) 构造示意。索引约定：c = p·56+k，[i,j]=(rx_i, tx_j)。</figcaption>
+  </figure>
+
+  <h3>5.2 三个可选特征</h3>
+
+  <p>特征选择由 <code>configs/train.yaml:features</code> 决定，组合是<strong>对齐列表</strong>（按字典序排序）：</p>
+
+  <table>
+    <thead><tr><th>特征</th><th>形状</th><th>是否默认</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><code>amplitude</code></td><td>(280, 3, 3)</td><td>✅ 必选</td><td>主信号，子载波振幅</td></tr>
+      <tr><td><code>phase</code></td><td>(280, 3, 3)</td><td>opt-in</td><td>净化后的相位（去 STO/CFO），M2.5 ablation</td></tr>
+      <tr><td><code>rssi</code></td><td>(5, 3, 3)</td><td>opt-in</td><td>包级 RSSI（dB），用作 ×10^(RSSI/20) 振幅重缩放</td></tr>
+    </tbody>
+  </table>
+
+  <p>开启全部特征时输入通道数翻倍到 <span class="math">560 = 280(amp) + 280(phase)</span>，RSSI 不进通道数（仅作振幅 rescale）。</p>
+
+  <h3>5.3 相位净化（phase sanitization）</h3>
+
+  <p>每包 STO（采样时间偏移）和 CFO（中心频率偏移）会让相位出现沿子载波的线性斜坡。
+  用最小二乘投影去掉：</p>
+
+  <div class="math-block">
+    φ̃ = P · unwrap(φ), &nbsp;&nbsp; P = I_56 − A(AᵀA)⁻¹Aᵀ, &nbsp;&nbsp; A = [k  1] ∈ ℝ^(56×2)
+  </div>
+
+  <p><code>P</code> 把向量投影到 <code>span(k, 1)</code> 的正交补——任何斜率+常数都被剔除，剩下纯净的多径相位。
+  实现：<code>host/csi_pipe/align.py:sanitized_phase</code>。</p>
+
+  <h3>5.4 归一化流水线</h3>
+
+  <p>按<strong>训练集统计</strong>计算 μ、σ（验证集用同一份，不重算）：</p>
+
+  <ol>
+    <li>
+      <strong>缺损填 0 → L2</strong>（per-packet per-link）：<br>
+      <span class="math">X̂^(i,j) = X^(i,j) / ‖X^(i,j)‖₂</span><br>
+      缺损向量（≥ 2 个缺损包）填 0，归一化仍为 0（避免除零陷阱）。
+    </li>
+    <li>
+      <strong>RSSI 重缩放</strong>（opt-in）：<br>
+      <span class="math">X̂^(i,j) ← X̂^(i,j) · 10^(RSSI_ij / 20)</span><br>
+      补偿每块板的 AGC 差异，让绝对功率可比较。
+    </li>
+    <li>
+      <strong>Z-score</strong>（per-link，用 train 统计）：<br>
+      <span class="math">X = (X̂ − μ) / σ</span>，其中 <span class="math">μ, σ ∈ ℝ^(3×3)</span><br>
+      9 个链路各自独立标准化。μ、σ 写入 checkpoint。
+    </li>
+  </ol>
+
+  <p class="code-title">归一化核心代码（<code>train/csi_train/data.py</code>）</p>
+  <pre><code>def normalize_rows(rows, features, mu, sigma, mu_phase=None, sigma_phase=None):
+    feats = _canon_features(features)
+    Xn = l2_normalize(rows.X)              # ① per-link L2
+    if "rssi" in feats:
+        Xn = rssi_rescale(Xn, rows.RS)     # ② RSSI 重缩放（opt）
+    X = apply_stats(Xn, mu, sigma)         # ③ z-score → f16
+    if "phase" in feats:
+        X = np.concatenate([X, apply_stats(rows.XP.astype(np.float32),
+                                           mu_phase, sigma_phase)], axis=1)
+    return X</code></pre>
+
+  <div class="callout warning">
+    <span class="callout-icon">⚠️</span>
+    <strong>不跨链路用相位</strong>：6 块板子的晶振独立，跨链路相位差是随机量，
+    把它当特征会让模型过拟合到某次会话的随机相位偏差。只能<strong>链路内相位形状</strong>（净化后）作为 ablation。
+  </div>
+
+  <figure>
+    <img src="figures/fig1_csi_spectrogram_motion.png" alt="CSI 振幅频谱 + 运动">
+    <figcaption>单链路 56 子载波振幅频谱，下方 CSI 运动统计追踪摄像头测得的关节速度。来源：README。</figcaption>
+  </figure>
+
+  <figure>
+    <img src="figures/fig4_rssi_presence.png" alt="RSSI 分布 vs 是否有人">
+    <figcaption>每链路 RSSI 分布：空房 vs 有人。有人时分布变宽——这就是为什么 RSSI 是有用的辅助特征。</figcaption>
+  </figure>
+</section>
+
+<hr>
+
+<!-- ============================================================ -->
+<section id="sec-model">
+  <h2><span class="anchor-num">6</span>模型架构 ★（深）</h2>
+
+  <h3>6.1 来源与定位</h3>
+
+  <p>
+    WiSPPN-ESP 是 <strong>WiSPPN</strong>（Intel 5300 单 NIC，<em>antenna matrix</em>）的非官方移植。
+    来源：<a href="https://github.com/geekfeiw/WiSPPN">geekfeiw/WiSPPN</a>，
+    论文 <em>Can WiFi Estimate Person Pose?</em>（arXiv:1904.00277）。
+  </p>
+
+  <p>主要修改点（4 个）：</p>
+  <ol>
+    <li>stem 280→150 通道正式使用（原版有 conv1 未调用的 bug）</li>
+    <li>decode 最后一层 2ch → 3ch（加 ĉ 通道）</li>
+    <li><code>interpolate scale_factor=48</code> 改为显式 <code>size=(144,144)</code>（等价但更明确）</li>
+    <li>新增 <code>vector_head</code> 变体（直接回归 18 关节向量，跳过 PAM 张量）</li>
+  </ol>
+
+  <h3>6.2 整体架构</h3>
+
+  <figure>
+    <img src="figures/fig_model_en.png" alt="WiSPPN-ESP 模型架构">
+    <figcaption>WiSPPN-ESP — (280,3,3) CSI 振幅张量先双线性升采样到 144×144，过 ResNet-18 风格 encoder，
+    接 PAM head 输出 (3,18,18) 或 vector head 输出 (3,18)。</figcaption>
+  </figure>
+
+  <h3>6.3 层级细节</h3>
+
+  <table>
+    <thead><tr><th>层</th><th>输入形状</th><th>输出形状</th><th>操作</th></tr></thead>
+    <tbody>
+      <tr><td>interpolate</td><td>(B, 280, 3, 3)</td><td>(B, 280, 144, 144)</td><td>bilinear 升采样</td></tr>
+      <tr><td>stem</td><td>(B, 280, 144, 144)</td><td>(B, 150, 144, 144)</td><td>conv3×3 + BN + ReLU</td></tr>
+      <tr><td>layer1</td><td>(B, 150, 144, 144)</td><td>(B, 150, 144, 144)</td><td>ResBlock × 2, stride 1</td></tr>
+      <tr><td>layer2</td><td>(B, 150, 144, 144)</td><td>(B, 150, 72, 72)</td><td>ResBlock × 2, stride 2</td></tr>
+      <tr><td>layer3</td><td>(B, 150, 72, 72)</td><td>(B, 300, 36, 36)</td><td>ResBlock × 2, stride 2</td></tr>
+      <tr><td>layer4</td><td>(B, 300, 36, 36)</td><td>(B, 300, 18, 18)</td><td>ResBlock × 2, stride 2</td></tr>
+      <tr><td>decode</td><td>(B, 300, 18, 18)</td><td>(B, 3, 18, 18)</td><td>conv3×3(300→64) + BN + ReLU + conv1×1(64→3), bias=False</td></tr>
+    </tbody>
+  </table>
+
+  <h3>6.4 PAM 张量含义</h3>
+
+  <figure>
+    <svg viewBox="0 0 640 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="PAM tensor">
+      <style>
+        .box { fill: #fff; stroke: #1f2328; stroke-width: 1; }
+        .diag { fill: #0969da; }
+        .off { fill: #f6f8fa; }
+        .lbl { font: 12px sans-serif; fill: #1f2328; text-anchor: middle; }
+        .small { font: 10px monospace; fill: #59636e; text-anchor: middle; }
+        .strong { font: 700 12px sans-serif; fill: #1f2328; }
+      </style>
+      <text class="strong" x="320" y="20">PAM ∈ ℝ^(3×18×18) — 三通道 (x, y, ĉ)</text>
+
+      <!-- Big 18x18 grid (simplified to 6x6 visual) -->
+      <g transform="translate(40, 60)">
+        <text class="lbl" x="120" y="-15">18×18 关节对亲和度</text>
+        <!-- Visual 6x6 (representative) -->
+        <g>
+          <rect class="off" x="0"   y="0"   width="30" height="30"/>
+          <rect class="off" x="30"  y="0"   width="30" height="30"/>
+          <rect class="off" x="60"  y="0"   width="30" height="30"/>
+          <rect class="off" x="90"  y="0"   width="30" height="30"/>
+          <rect class="off" x="120" y="0"   width="30" height="30"/>
+          <rect class="off" x="150" y="0"   width="30" height="30"/>
+
+          <rect class="off" x="0"   y="30"  width="30" height="30"/>
+          <rect class="diag" x="30"  y="30"  width="30" height="30"/>
+          <rect class="off" x="60"  y="30"  width="30" height="30"/>
+          <rect class="off" x="90"  y="30"  width="30" height="30"/>
+          <rect class="off" x="120" y="30"  width="30" height="30"/>
+          <rect class="off" x="150" y="30"  width="30" height="30"/>
+
+          <rect class="off" x="0"   y="60"  width="30" height="30"/>
+          <rect class="off" x="30"  y="60"  width="30" height="30"/>
+          <rect class="diag" x="60"  y="60"  width="30" height="30"/>
+          <rect class="off" x="90"  y="60"  width="30" height="30"/>
+          <rect class="off" x="120" y="60"  width="30" height="30"/>
+          <rect class="off" x="150" y="60"  width="30" height="30"/>
+
+          <rect class="off" x="0"   y="90"  width="30" height="30"/>
+          <rect class="off" x="30"  y="90"  width="30" height="30"/>
+          <rect class="off" x="60"  y="90"  width="30" height="30"/>
+          <rect class="diag" x="90"  y="90"  width="30" height="30"/>
+          <rect class="off" x="120" y="90"  width="30" height="30"/>
+          <rect class="off" x="150" y="90"  width="30" height="30"/>
+
+          <rect class="off" x="0"   y="120" width="30" height="30"/>
+          <rect class="off" x="30"  y="120" width="30" height="30"/>
+          <rect class="off" x="60"  y="120" width="30" height="30"/>
+          <rect class="off" x="90"  y="120" width="30" height="30"/>
+          <rect class="diag" x="120" y="120" width="30" height="30"/>
+          <rect class="off" x="150" y="120" width="30" height="30"/>
+
+          <rect class="off" x="0"   y="150" width="30" height="30"/>
+          <rect class="off" x="30"  y="150" width="30" height="30"/>
+          <rect class="off" x="60"  y="150" width="30" height="30"/>
+          <rect class="off" x="90"  y="150" width="30" height="30"/>
+          <rect class="off" x="120" y="150" width="30" height="30"/>
+          <rect class="diag" x="150" y="150" width="30" height="30"/>
+        </g>
+
+        <!-- Diagonal line annotation -->
+        <line stroke="#cf222e" stroke-width="2" stroke-dasharray="3,2"
+              x1="0" y1="0" x2="180" y2="180"/>
+        <text class="small" x="95" y="95" fill="#cf222e">对角 = 关节</text>
+
+        <!-- Off-diagonal annotation -->
+        <text class="small" x="60" y="50">关节对亲和度</text>
+      </g>
+
+      <!-- Right panel: diagonal extraction -->
+      <g transform="translate(280, 60)">
+        <rect class="box" x="0" y="0" width="180" height="180"/>
+        <text class="strong" x="90" y="-10" text-anchor="middle">对角线提取</text>
+        <text class="small" x="90" y="20">(3, 18, 18) → diag</text>
+        <text class="small" x="90" y="40">→ (3, 18)</text>
+        <text class="small" x="90" y="60">→ (x, y, ĉ) × 18</text>
+
+        <!-- Joint list -->
+        <g transform="translate(0, 80)">
+          <text class="small" x="20" y="0">0  nose</text>
+          <text class="small" x="20" y="15">1  neck</text>
+          <text class="small" x="20" y="30">2-4  R arm</text>
+          <text class="small" x="20" y="45">5-7  L arm</text>
+          <text class="small" x="20" y="60">8-10  R leg</text>
+          <text class="small" x="20" y="75">11-13  L leg</text>
+          <text class="small" x="20" y="90">14-17  eyes/ears</text>
+        </g>
+      </g>
+
+      <!-- Far right: vector head alt -->
+      <g transform="translate(490, 60)">
+        <text class="strong" x="60" y="0" text-anchor="middle">vector head</text>
+        <text class="small" x="60" y="20">Linear(300→64)</text>
+        <text class="small" x="60" y="36">ReLU</text>
+        <text class="small" x="60" y="52">Linear(64→54)</text>
+        <text class="small" x="60" y="70">reshape → (3, 18)</text>
+
+        <rect class="box" x="10" y="90" width="100" height="60"/>
+        <text class="small" x="60" y="115">跳过 PAM 解码</text>
+        <text class="small" x="60" y="135">参数大幅减少</text>
+        <text class="small" x="60" y="155">只支持 diag_only</text>
+      </g>
+    </svg>
+    <figcaption>PAM 张量含义：3 个通道分别存 x, y, ĉ。对角线 18 个 (x,y,ĉ) = 18 关节坐标 + 置信度；非对角 = 关节对亲和度（OpenPose Part Affinity Field 风格的扩展，本项目未使用）。</figcaption>
+  </figure>
+
+  <h3>6.5 关键代码</h3>
+
+  <p class="code-title"><code>train/csi_train/model.py</code> · 核心 forward</p>
+  <pre><code>def forward(self, x):
+    size = self.n_joints * 8                     # 144 = 18 × 8
+    x = F.interpolate(x, size=(size, size),
+                      mode="bilinear", align_corners=False)
+    x = self.stem(x)                             # (B,150,144,144)
+    x = self.layer4(self.layer3(self.layer2(self.layer1(x))))
+    if self.vector_head:
+        return self.head(x.mean(dim=(2, 3))).view(-1, 3, self.n_joints)
+    return self.decode(x)                        # (B, 3, 18, 18)</code></pre>
+
+  <p class="code-title"><code>train/csi_train/model.py</code> · decode head（论文风格）</p>
+  <pre><code>self.decode = nn.Sequential(
+    conv3x3(width * 2, 64),    # 300 → 64
+    nn.BatchNorm2d(64),
+    nn.ReLU(inplace=True),
+    nn.Conv2d(64, 3, 1, bias=False))    # 64 → 3 (x, y, ĉ)</code></pre>
+
+  <div class="callout design">
+    <span class="callout-icon">💡</span>
+    <strong>vector head vs PAM head</strong>：PAM 张量 (3,18,18) ≈ 972 个输出值，参数多但表达力强（理论上可输出关节对关系）；
+    vector head (3,18) ≈ 54 个输出值，参数少训练快，但被锁定只能 <code>diag_only</code> 损失模式（<code>loss.py</code> 显式校验）。
+    实际部署推荐 vector head（速度、稳定性）。
+  </div>
+
+  <h3>6.6 训练效率细节</h3>
+
+  <ul>
+    <li><strong>batch=64</strong> 是被内存约束定的：forward 时输入升采样到 144×144，
+    中间张量 (B,150,144,144) f32 单 batch ≈ 11.9 MB；batch=512 试过会触发 16 GB GPU OOM（实测）。</li>
+    <li><strong>升采样在 forward 里做</strong>而不是 dataset 里——避免在内存中物化巨型 f16 数组。</li>
+    <li><strong>bf16 autocast</strong>：cuda 自动混精，CPU 强制 fp32。</li>
+  </ul>
+</section>
+
+<hr>
+
+<!-- ============================================================ -->
+<section id="sec-train">
+  <h2><span class="anchor-num">7</span>训练流程（中）</h2>
+
+  <h3>7.1 数据流</h3>
+
+  <figure>
+    <svg viewBox="0 0 700 70" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="data flow">
+      <defs>
+        <marker id="ar3" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 z" fill="#1f2328"/>
+        </marker>
+      </defs>
+      <style>
+        .box { fill: #fff; stroke: #1f2328; stroke-width: 1.5; rx: 6; }
+        .box.accent { fill: #f6f8fa; stroke: #0969da; stroke-width: 2; }
+        .lbl { font: 600 11px sans-serif; fill: #1f2328; text-anchor: middle; }
+        .sub { font: 10px monospace; fill: #59636e; text-anchor: middle; }
+        .line { stroke: #1f2328; stroke-width: 1.5; fill: none; marker-end: url(#ar3); }
+      </style>
+      <rect class="box" x="10"  y="15" width="90"  height="40"/>
+      <rect class="box" x="130" y="15" width="100" height="40"/>
+      <rect class="box" x="260" y="15" width="120" height="40"/>
+      <rect class="box accent" x="410" y="15" width="120" height="40"/>
+      <rect class="box accent" x="560" y="15" width="130" height="40"/>
+
+      <text class="lbl" x="55"  y="34">HDF5</text>
+      <text class="sub" x="55"  y="48">/samples/{X,Y,...}</text>
+      <text class="lbl" x="180" y="34">valid mask</text>
+      <text class="sub" x="180" y="48">valid &amp; label_ok</text>
+      <text class="lbl" x="320" y="34">L2 → z-score</text>
+      <text class="sub" x="320" y="48">per-link</text>
+      <text class="lbl" x="470" y="34">DataLoader</text>
+      <text class="sub" x="470" y="48">batch=64, shuffle</text>
+      <text class="lbl" x="625" y="34">GPU + bf16</text>
+      <text class="sub" x="625" y="48">autocast</text>
+
+      <line class="line" x1="100" y1="35" x2="130" y2="35"/>
+      <line class="line" x1="230" y1="35" x2="260" y2="35"/>
+      <line class="line" x1="380" y1="35" x2="410" y2="35"/>
+      <line class="line" x1="530" y1="35" x2="560" y2="35"/>
+    </svg>
+    <figcaption>训练数据流：HDF5 → 行筛选 → 归一化（一次性，train μ·σ）→ DataLoader → GPU autocast。</figcaption>
+  </figure>
+
+  <h3>7.2 超参（<code>configs/train.example.yaml</code> 默认）</h3>
+
+  <table>
+    <thead><tr><th>参数</th><th>默认值</th><th>来源</th></tr></thead>
+    <tbody>
+      <tr><td>batch</td><td>64</td><td>内存约束（升采样后 11.9 MB/batch）</td></tr>
+      <tr><td>epochs</td><td>30</td><td>经验值，val PCK 已收敛</td></tr>
+      <tr><td>lr</td><td>1e-3</td><td>AdamW 默认</td></tr>
+      <tr><td>wd</td><td>1e-4</td><td>AdamW 默认</td></tr>
+      <tr><td>warmup</td><td>2 epochs</td><td>避免初期梯度爆炸</td></tr>
+      <tr><td>schedule</td><td>cosine</td><td><code>fit.make_scheduler</code></td></tr>
+      <tr><td>precision</td><td>bf16</td><td>cuda autocast</td></tr>
+      <tr><td>mode</td><td><code>pam_full</code></td><td>损失覆盖全 PAM</td></tr>
+      <tr><td>lam (conf)</td><td>1.0</td><td>置信度损失权重</td></tr>
+    </tbody>
+  </table>
+
+  <h3>7.3 损失函数</h3>
+
+  <p>核心思路：<strong>confidence-floor weighted MSE</strong>。负样本（presence=0）不参与坐标损失，但参与 ĉ 损失（让 ĉ 学会趋零）。</p>
+
+  <div class="math-block">
+    w = 𝟙[presence] · max(c_gt, 0.2)   ← C_FLOOR = 0.2
+  </div>
+
+  <p>三种损失模式（<code>loss.py:MODES</code>）：</p>
+
+  <table>
+    <thead><tr><th>模式</th><th>适用 head</th><th>损失覆盖范围</th></tr></thead>
+    <tbody>
+      <tr><td><code>pam_full</code></td><td>PAM head</td><td>全 PAM 元素</td></tr>
+      <tr><td><code>diag_balanced</code></td><td>PAM head</td><td>对角权重 ×17（306/18 均衡）</td></tr>
+      <tr><td><code>diag_only</code></td><td>vector head</td><td>只对角 18 个关节</td></tr>
+    </tbody>
+  </table>
+
+  <p class="code-title">损失核心（<code>train/csi_train/loss.py</code>）</p>
+  <pre><code>def pose_loss(pred, Y, presence, *, mode="pam_full", lam=1.0):
+    d = torch.arange(J, device=Y.device)
+    C = Y[:, 2]                              # (B, J, J) confidence
+    c_diag = C[:, d, d]                      # (B, J) 对角
+    pr = presence.to(Y.dtype)
+
+    if pred.dim() == 3:                      # vector head
+        w = pr.view(-1, 1) * c_diag.clamp(min=C_FLOOR)
+        se = (pred[:, :2] - Y[:, :2, d, d]) ** 2
+        coord = (w.unsqueeze(1) ** 2 * se).mean()
+        conf  = (pred[:, 2] - c_diag).pow(2).mean()
+    else:                                    # PAM head
+        w = pr.view(-1, 1, 1) * C.clamp(min=C_FLOOR)
+        eye = torch.eye(J, device=Y.device, dtype=Y.dtype)
+        m = torch.ones_like(eye)             # pam_full
+        se = (pred[:, :2] - Y[:, :2]) ** 2
+        coord = (m * w.unsqueeze(1) ** 2 * se).mean()
+        conf  = (pred[:, 2, d, d] - c_diag).pow(2).mean()
+
+    total = coord + lam * conf
+    return total, {"coord": coord.detach(), "conf": conf.detach()}</code></pre>
+
+  <div class="callout design">
+    <span class="callout-icon">💡</span>
+    <strong>为什么 confidence floor = 0.2？</strong>RTMPose 给的 c 值在 0.0-1.0 之间。
+    但低 c 帧（关节被遮挡、模糊）仍含部分有效信息——直接用 c=0 屏蔽会丢掉这些。
+    设下限 0.2 相当于"轻信但不全信"，对难样本友好。
+  </div>
+
+  <h3>7.4 数据增强（4 种）</h3>
+
+  <p>仅训练时启用，z-score 空间操作，概率 <code>p=0.5</code> per-sample：</p>
+
+  <table>
+    <thead><tr><th>增强</th><th>参数</th><th>模拟的现实扰动</th></tr></thead>
+    <tbody>
+      <tr><td>Gaussian noise</td><td>σ = 0.05</td><td>接收机热噪声</td></tr>
+      <tr><td>Scale jitter</td><td>U(1±0.25)</td><td>AGC 调整、距离变化</td></tr>
+      <tr><td>Subcarrier drop</td><td>k = 4</td><td>窄带衰落（一个 4-SC 簇被选择性衰减）</td></tr>
+      <tr><td>Link erasing</td><td>p = 0.1</td><td>单链路失效（板子卡顿）</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout design">
+    <span class="callout-icon">💡</span>
+    <strong>填充值 = mu0</strong>：drop/erasing 的填值是 <code>-(mu / sigma)</code>——也就是 raw 0 在 z-score 空间的值。
+    这样训练时缺失的子载波/链路分布与真实捕获场景一致，避免人为引入"好填充"的虚假信号。
+  </div>
+
+  <h3>7.5 评估指标 PCK@α</h3>
+
+  <p>Percentage of Correct Keypoints——关节位置预测在 GT 一定比例（α）的归一化距离以内就算对。
+  关键创新：<strong>躺姿鲁棒分母 D_f</strong>。</p>
+
+  <div class="math-block">
+    D_f = 𝟙[AR &lt; 0.8] · max(torso_f, κ · diag_f) + 𝟙[AR ≥ 0.8] · torso_f
+  </div>
+
+  <p>
+    <code>AR = h/w</code>（核心 bbox 高宽比，h/w &lt; 0.8 = 躺姿），<code>torso</code> = 躯干对角线（肩-髋），
+    <code>diag</code> = 核心 bbox 对角线。躺下时躯干被压缩，必须用 bbox 对角线校正，否则 PCK 会虚高。
+  </p>
+
+  <p>
+    <code>κ = median_{AR ≥ 1.2}(torso / diag)</code>——用训练集的<strong>直立帧</strong>做一次标定，把两个量纲统一成同尺度。
+  </p>
+
+  <figure>
+    <img src="figures/fig7_ablation_gates.png" alt="输入表示 ablation 与门槛">
+    <figcaption>输入表示 ablation：最佳 PCK@0.2 = 0.495 / PCK@0.5 = 0.897，超过绝对门槛 0.35 和两个 baseline（mean-pose 0.185, kNN 0.321）。</figcaption>
+  </figure>
+
+  <figure>
+    <img src="figures/fig8_perjoint_pck.png" alt="每关节 PCK">
+    <figcaption>每关节 PCK@0.2 vs baseline。运动丰富的脸部和手臂关节领先——说明模型学到了与运动相关的信道特征，而不是单纯记忆静态姿态。</figcaption>
+  </figure>
+
+  <h3>7.6 Best checkpoint 选择</h3>
+
+  <p>
+    按 <strong>val PCK@0.2 最大</strong> 选。每个 epoch 跑一次 val，保存最优 <code>best.pt</code>。
+    checkpoint 内容：state_dict + μ + σ + config + git_rev + κ + best 元数据 + (opt) μ_phase, σ_phase。
+  </p>
+</section>
+
+<hr>
+
+<!-- ============================================================ -->
+<section id="sec-rt">
+  <h2><span class="anchor-num">8</span>实时推理 + 跌倒 FSM ★（深）</h2>
+
+  <h3>8.1 推理入口</h3>
+
+  <p>
+    <code>rt/demo.py</code> 启动后选择 <code>ReplaySource</code>（回放 HDF5）或 <code>LiveSource</code>（订阅 MQTT），
+    喂入 <code>PoseEstimator</code>（<code>rt/csi_rt/infer.py</code>），得到每窗口的 18 关节坐标 + 置信度，
+    再送进 <code>FallDetector</code>（<code>rt/csi_rt/fall.py</code>）做状态机。
+  </p>
+
+  <p class="code-title"><code>rt/csi_rt/infer.py</code> · 核心推理</p>
+  <pre><code>def __call__(self, X_raw):
+    """X_raw (280,3,3) f32/f16 → (xy (18,2) f32, c (18,) f32)"""
+    Xn = l2_normalize(np.asarray(X_raw, np.float32)[None])  # ① per-link L2
+    Xn = (Xn - self.mu) / self.sigma                       # ② z-score（ckpt μ·σ）
+    with torch.no_grad():
+        out = self.model(torch.from_numpy(Xn.astype(np.float32)).to(self.device))
+    o = out[0].cpu().numpy()
+    if self.vector_head:
+        v = o                                              # (3, 18)
+    else:
+        d = np.arange(o.shape[-1])
+        v = o[:, d, d]                                     # (3, 18, 18) → (3, 18) 对角
+    return v[:2].T.astype(np.float32).copy(), v[2].astype(np.float32).copy()</code></pre>
+
+  <h3>8.2 Presence gate + 运动能量</h3>
+
+  <p><code>presence.py</code> 提供两个轻量信号：</p>
+
+  <table>
+    <thead><tr><th>信号</th><th>计算</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td>Presence gate</td><td><code>mean(ĉ) ≥ τ_presence (=0.3)</code></td><td>判"有人/无人"</td></tr>
+      <tr><td>Motion energy</td><td>9 链路窗口 0.5 s 的包级平均振幅 std</td><td>HUD、FSM 兜底（当前 CSI 静止检测已关）</td></tr>
+    </tbody>
+  </table>
+
+  <h3>8.3 跌倒检测 FSM：IDLE → IMPACT → ALARM</h3>
+
+  <figure>
+    <img src="figures/fig_fsm_en.png" alt="跌倒状态机">
+    <figcaption>跌倒状态机（IDLE → IMPACT → ALARM）规则与释放条件。来源：README。</figcaption>
+  </figure>
+
+  <h3>8.4 三条规则（R1/R2/R3）</h3>
+
+  <p>至少 <strong>2/3 触发</strong> 才进入 IMPACT 状态（OR 太敏感、AND 漏报）。</p>
+
+  <table>
+    <thead>
+      <tr><th>规则</th><th>触发条件</th><th>阈值</th><th>依据</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>R1</strong> 骨盆快速下降</td>
+        <td>0.3 s 内 hip_y（左右髋均值）线性回归斜率 &gt; θ_v</td>
+        <td><code>θ_v = 0.4</code>（归一化 y/s）</td>
+        <td>实测跌倒斜率 p50 ≈ 0.7（<code>rt-handoff-20260612</code>）</td>
+      </tr>
+      <tr>
+        <td><strong>R2</strong> 站→躺转换</td>
+        <td>transition_s 窗口内 <code>max(AR) ≥ aspect_hi</code> 且当前 <code>AR ≤ aspect_lo</code></td>
+        <td><code>aspect_hi = 1.2</code>、<code>aspect_lo = 1.0</code>、<code>transition_s = 1.5 s</code></td>
+        <td>AR = h/w，h/w &lt; 0.8 严格躺，1.0 阈值兼顾实际穿戴</td>
+      </tr>
+      <tr>
+        <td><strong>R3</strong> 头部掉到下半屏</td>
+        <td>鼻关节 y 坐标 &gt; head_y</td>
+        <td><code>head_y = 0.7</code></td>
+        <td>头进入画面下 30%</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <figure>
+    <svg viewBox="0 0 700 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="fall rules">
+      <style>
+        .box { fill: #fff; stroke: #1f2328; stroke-width: 1.5; rx: 8; }
+        .box.warn { fill: #fff5f5; stroke: #cf222e; }
+        .box.ok { fill: #f0fdf4; stroke: #1a7f37; }
+        .title { font: 700 14px sans-serif; fill: #1f2328; }
+        .body { font: 12px sans-serif; fill: #1f2328; }
+        .mono { font: 11px monospace; fill: #59636e; }
+        .hl { fill: #0969da; }
+      </style>
+
+      <!-- R1: Hip descent -->
+      <g transform="translate(20, 30)">
+        <rect class="box" width="200" height="170"/>
+        <text class="title" x="15" y="25">R1 骨盆快速下降</text>
+        <text class="mono" x="15" y="45">y_hip(t), t∈[t−0.3, t]</text>
+        <!-- Mini plot -->
+        <line stroke="#1f2328" stroke-width="1" x1="20" y1="140" x2="180" y2="140"/>
+        <line stroke="#1f2328" stroke-width="1" x1="20" y1="60"  x2="20"  y2="140"/>
+        <line class="hl" stroke="#0969da" stroke-width="2"
+              x1="20" y1="65" x2="180" y2="135"/>
+        <circle cx="100" cy="100" r="3" fill="#0969da"/>
+        <text class="body" x="20" y="160">斜率 β₁ &gt; θ_v = 0.4</text>
+      </g>
+
+      <!-- R2: Stand-to-lie -->
+      <g transform="translate(250, 30)">
+        <rect class="box" width="200" height="170"/>
+        <text class="title" x="15" y="25">R2 站→躺</text>
+        <text class="mono" x="15" y="45">AR = h/w, 窗口 1.5 s</text>
+        <!-- Two figures: tall vs wide -->
+        <rect fill="#f6f8fa" stroke="#1f2328" x="40" y="65" width="22" height="60"/>
+        <text class="mono" x="50" y="140" text-anchor="middle">站</text>
+        <text class="mono" x="50" y="155" text-anchor="middle">AR≈1.5</text>
+        <line stroke="#1a7f37" stroke-width="2" marker-end="url(#ar4)" x1="65" y1="90" x2="120" y2="90" opacity="0"/>
+        <rect fill="#fff5f5" stroke="#cf222e" x="130" y="80" width="60" height="35"/>
+        <text class="mono" x="160" y="130" text-anchor="middle">躺 AR≈0.6</text>
+        <text class="body" x="15" y="160">max ≥ 1.2 ∧ now ≤ 1.0</text>
+      </g>
+
+      <!-- R3: Head drop -->
+      <g transform="translate(480, 30)">
+        <rect class="box" width="200" height="170"/>
+        <text class="title" x="15" y="25">R3 头部掉到下半屏</text>
+        <text class="mono" x="15" y="45">y_nose ∈ [0, 1]</text>
+        <!-- Frame box -->
+        <rect fill="#f6f8fa" stroke="#1f2328" x="40" y="60" width="100" height="70"/>
+        <line stroke="#cf222e" stroke-width="1.5" stroke-dasharray="4,3"
+              x1="40" y1="100" x2="140" y2="100"/>
+        <text class="mono" x="100" y="98" text-anchor="middle" fill="#cf222e">head_y = 0.7</text>
+        <!-- Head circle (in lower half) -->
+        <circle cx="90" cy="115" r="6" fill="#cf222e"/>
+        <text class="body" x="15" y="160">y_nose &gt; head_y 触发</text>
+      </g>
+
+      <!-- Summary box -->
+      <g transform="translate(20, 210)">
+        <rect class="box warn" width="660" height="22"/>
+        <text class="body" x="15" y="15">综合判定：<tspan font-weight="700" fill="#cf222e">至少 2/3 条规则同时触发</tspan> 才进入 IMPACT</text>
+      </g>
+    </svg>
+    <figcaption>三条跌倒规则 R1/R2/R3。R1 髋骨斜率、R2 高宽比反转、R3 鼻尖位置。三者 OR-of-cues 过敏感、AND 漏报，2/3 是平衡点。</figcaption>
+  </figure>
+
+  <h3>8.5 ALARM 保持窗口</h3>
+
+  <p>进入 IMPACT 后，<strong>不能立即报警</strong>——必须等待确认窗口内"躺且静"：</p>
+
+  <table>
+    <thead><tr><th>参数</th><th>值</th><th>含义</th></tr></thead>
+    <tbody>
+      <tr><td><code>confirm_s</code></td><td>2.0 s</td><td>IMPACT 后等待确认的时间</td></tr>
+      <tr><td><code>lying_ratio</code></td><td>0.7</td><td>窗口内"躺姿"帧比例下界</td></tr>
+      <tr><td><code>theta_still</code></td><td>0.02</td><td>姿态帧间位移 RMS 上界（归一化空间）</td></tr>
+      <tr><td><code>refractory_s</code></td><td>10.0 s</td><td>ALARM 后抑制期</td></tr>
+      <tr><td><code>release_hold_s</code></td><td>1.0 s</td><td>恢复站立需持续时间</td></tr>
+      <tr><td><code>absent_release_s</code></td><td>5.0 s</td><td>离开检测区这么久才解除</td></tr>
+      <tr><td><code>grace_s</code></td><td>1.5 s</td><td>IMPACT 后 ĉ 短暂塌陷的容忍窗口</td></tr>
+      <tr><td><code>release_hip_y</code></td><td>0.6</td><td>恢复站立时 hip_y 上限</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout design">
+    <span class="callout-icon">💡</span>
+    <strong>为什么要有 hold 窗口？</strong>蹲下、靠墙坐下、蹲下系鞋带这些动作都可能瞬间触发 R1+R2。
+    必须等 2 s 看他是不是真的躺下不动了，才能确认是跌倒。
+    没有这个窗口，蹲下也会被报成跌倒。
+  </div>
+
+  <h3>8.6 当前禁用项</h3>
+
+  <div class="callout warning">
+    <span class="callout-icon">⚠️</span>
+    <strong>CSI 静止检测已关闭</strong>：<code>theta_csi_still = 0</code>。
+    站、躺、空房三种状态的运动能量分布严重重叠——
+    实测 <code>m15-cap1</code>：empty p95 = 11.8 / lie p95 = 12.0 / stand p5 = 8.8（包级平均振幅 std）。
+    AGC 和 chunk 噪声主导了统计量，不能用来分类。
+    目前只能靠<strong>姿态几何</strong>判别静止，无法靠 CSI 能量。
+  </div>
+
+  <h3>8.7 性能基线</h3>
+
+  <div class="stat-row">
+    <div class="stat">
+      <div class="label">召回</div>
+      <div class="value">10/11</div>
+      <div class="note">脚本化跌倒 11 次 → 检出 10 次</div>
+    </div>
+    <div class="stat">
+      <div class="label">精确</div>
+      <div class="value">10/12</div>
+      <div class="note">总报警 12 次，其中 10 次真跌倒</div>
+    </div>
+    <div class="stat">
+      <div class="label">中位上升时间</div>
+      <div class="value">0.34 s</div>
+      <div class="note">真跌倒到 ALARM 触发</div>
+    </div>
+    <div class="stat">
+      <div class="label">会话</div>
+      <div class="value">单会话</div>
+      <div class="note">fall-demo-01，13 min 录像</div>
+    </div>
+  </div>
+
+  <figure>
+    <img src="figures/fig9_fall_timeline.png" alt="跌倒回放时间线">
+    <figcaption>720 s 会话上 11 次脚本化跌倒的回放：召回 10/11，精确 10/12，中位 TP 上升时间 0.34 s。</figcaption>
+  </figure>
+
+  <div class="callout review">
+    <span class="callout-icon">⏸️</span>
+    <strong>待复核</strong>：所有阈值来自 <code>fall-demo-01</code> 单次会话。多会话、跨用户验证未做。
+    README 已声明"这不是经过验证的医疗或安全设备"。任何阈值改动必须先在基线会话复现。
+  </div>
+
+  <h3>8.8 实时数据流（Replay vs Live）</h3>
+
+  <p><code>rt/csi_rt/sources.py</code> 提供两种数据源，统一产出 <code>Pkt(rx, tx, t_ns, amp)</code>：</p>
+
+  <table>
+    <thead><tr><th>源</th><th>输入</th><th>时间重建</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>ReplaySource</code></td>
+        <td>回放 HDF5</td>
+        <td>CausalOffset rolling-min</td>
+        <td>离线 demo、模型验证</td>
+      </tr>
+      <tr>
+        <td><code>LiveSource</code></td>
+        <td>MQTT <code>csi/#</code></td>
+        <td>CausalOffset + TimeUnwrapper</td>
+        <td>实时部署</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<hr>
+
+<!-- ============================================================ -->
+<section id="sec-appendix">
+  <h2><span class="anchor-num">附录</span>关键文件速查与决策追溯</h2>
+
+  <h3>A.1 关键文件速查</h3>
+
+  <table>
+    <thead><tr><th>想找什么</th><th>文件</th></tr></thead>
+    <tbody>
+      <tr><td>CSI 帧格式（130B）</td><td><code>firmware/components/csi_link/</code></td></tr>
+      <tr><td>时钟拟合</td><td><code>host/csi_pipe/clockfit.py</code></td></tr>
+      <tr><td>窗口构建（5 包 × 56 SC）</td><td><code>host/csi_pipe/samples.py:build()</code></td></tr>
+      <tr><td>归一化（L2 + z-score）</td><td><code>train/csi_train/data.py:l2_normalize / apply_stats</code></td></tr>
+      <tr><td>模型定义</td><td><code>train/csi_train/model.py:WiSPPN</code></td></tr>
+      <tr><td>损失函数</td><td><code>train/csi_train/loss.py:pose_loss</code></td></tr>
+      <tr><td>数据增强</td><td><code>train/csi_train/augment.py:augment_batch</code></td></tr>
+      <tr><td>训练循环</td><td><code>train/csi_train/fit.py:train_model</code></td></tr>
+      <tr><td>PCK 评估</td><td><code>train/csi_train/pck.py:evaluate</code></td></tr>
+      <tr><td>实时推理</td><td><code>rt/csi_rt/infer.py:PoseEstimator</code></td></tr>
+      <tr><td>跌倒 FSM</td><td><code>rt/csi_rt/fall.py:FallDetector</code></td></tr>
+      <tr><td>数据源（Replay/Live）</td><td><code>rt/csi_rt/sources.py</code></td></tr>
+      <tr><td>教师打标签</td><td><code>teacher/teacher.py</code></td></tr>
+      <tr><td>BODY-18 拓扑</td><td><code>teacher/csi_teacher/body18.py</code></td></tr>
+      <tr><td>跌倒阈值配置</td><td><code>configs/rt.yaml:fall.*</code></td></tr>
+      <tr><td>训练超参</td><td><code>configs/train.example.yaml</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3>A.2 决策追溯</h3>
+
+  <table class="trace">
+    <thead><tr><th>决策</th><th>当前值</th><th>依据 / dev_doc</th></tr></thead>
+    <tbody>
+      <tr><td>窗口长度</td><td>50 ms = 5 包</td><td>README §"Tensorization"</td></tr>
+      <tr><td>网格频率</td><td>100 Hz (10 ms)</td><td><code>samples.STEP_NS = 10_000_000</code></td></tr>
+      <tr><td>时钟拟合窗口</td><td>600 s</td><td><code>samples.fit_window_s=600</code></td></tr>
+      <tr><td>视频-CSI 修正</td><td>−156.12 ms</td><td>STOP 事件实测，<code>configs/pairing.json</code></td></tr>
+      <tr><td>C_FLOOR</td><td>0.2</td><td>低 c 帧仍含信息，<code>loss.py:C_FLOOR</code></td></tr>
+      <tr><td>R1 θ_v</td><td>0.4</td><td><code>rt.yaml</code>，跌倒斜率 p50≈0.7 取半</td></tr>
+      <tr><td>R2 aspect_hi / aspect_lo</td><td>1.2 / 1.0</td><td>实测穿戴 +0.2 容忍，<code>rt.yaml</code></td></tr>
+      <tr><td>R3 head_y</td><td>0.7</td><td>画面下 30%，<code>rt.yaml</code></td></tr>
+      <tr><td>confirm_s</td><td>2.0 s</td><td>蹲下/坐下区分，<code>rt.yaml</code></td></tr>
+      <tr><td>refractory_s</td><td>10.0 s</td><td>避免连续触发，<code>rt.yaml</code></td></tr>
+      <tr><td>θ_csi_still</td><td>0（关闭）</td><td>m15-cap1 实测能量分布重叠</td></tr>
+      <tr><td>κ（躺姿分母）</td><td>train 集直立帧标定</td><td><code>pck.py:calibrate_kappa</code></td></tr>
+      <tr><td>batch size</td><td>64</td><td>512 触发 16 GB OOM 实测</td></tr>
+      <tr><td>向量升采样尺寸</td><td>144×144</td><td>18×8 stride 2×3 等价显式</td></tr>
+    </tbody>
+  </table>
+
+  <h3>A.3 术语表</h3>
+
+  <dl>
+    <dt>CSI（Channel State Information）</dt>
+    <dd>信道状态信息，OFDM 接收机对每个子载波的复数信道估计。csi-pose 用 56 子载波。</dd>
+
+    <dt>PAM（Pose Appearance Map）</dt>
+    <dd>把 18 关节坐标展开成 (3, 18, 18) 张量——对角是 (x, y, ĉ)，非对角是关节对亲和度（项目未实际使用）。</dd>
+
+    <dt>PCK（Percentage of Correct Keypoints）</dt>
+    <dd>关节点估计正确率。距离阈用分母（躺姿鲁棒）归一化。</dd>
+
+    <dt>CFO / STO</dt>
+    <dd>载波频偏 / 采样时间偏。每包相位线性斜坡的两个来源，相位净化要消掉。</dd>
+
+    <dt>AGC（自动增益控制）</dt>
+    <dd>接收机的可变增益，会让每包振幅绝对值漂移。用 per-link L2 归一化吸收。</dd>
+
+    <dt>FSM（Finite State Machine）</dt>
+    <dd>有限状态机。跌倒检测用 IDLE → IMPACT → ALARM 三态。</dd>
+
+    <dt>FSM / R1/R2/R3</dt>
+    <dd>跌倒检测的三条规则：髋斜率 / 高宽比反转 / 鼻位置。</dd>
+
+    <dt>κ（kappa）</dt>
+    <dd>躺姿 PCK 分母标定系数，train 集直立帧 median(torso/diag)。</dd>
+
+    <dt>C_FLOOR</dt>
+    <dd>confidence 下限 0.2，避免低 c 帧被完全屏蔽。</dd>
+  </dl>
+
+  <h3>A.4 相关链接</h3>
+
+  <ul>
+    <li><strong>父项目</strong>：<a href="../../../CLAUDE.md">ESP32_FallRec_Reference/CLAUDE.md</a></li>
+    <li><strong>本目录规则</strong>：<a href="../CLAUDE.md">csi-pose/CLAUDE.md</a></li>
+    <li><strong>上游 README</strong>：<a href="../README.md">csi-pose/README.md</a></li>
+    <li><strong>上游 README（韩文）</strong>：<a href="../README.ko.md">csi-pose/README.ko.md</a></li>
+    <li><strong>论文</strong>：<a href="https://arxiv.org/abs/1904.00277">arXiv:1904.00277 — Can WiFi Estimate Person Pose?</a></li>
+    <li><strong>WiSPPN 上游</strong>：<a href="https://github.com/geekfeiw/WiSPPN">geekfeiw/WiSPPN</a></li>
+    <li><strong>RTMDet/RTMPose</strong>：<a href="https://github.com/open-mmlab/mmpose">OpenMMLab mmpose</a></li>
+  </ul>
+
+  <h3>A.5 本文档的元信息</h3>
+
+  <table>
+    <tbody>
+      <tr><td><strong>生成方式</strong></td><td>手动撰写，基于源码逐函数核对</td></tr>
+      <tr><td><strong>源码核对</strong></td><td>data.py / model.py / loss.py / augment.py / fit.py / pck.py / fall.py / infer.py / sources.py / presence.py / samples.py / clockfit.py / body18.py / labels.py / rt.yaml</td></tr>
+      <tr><td><strong>依赖</strong></td><td>零外部依赖（纯 HTML + CSS + 内嵌 SVG），可双击打开、可离线</td></tr>
+      <tr><td><strong>维护约定</strong></td><td>改阈值/参数时同步更新本文 §A.2 决策追溯</td></tr>
+    </tbody>
+  </table>
+</section>
+
+</div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p><strong>csi-pose · CSI → 训练 → 跌倒检测 技术栈总览</strong></p>
+    <p>本项目原作者：Kyung-Bo Kim, Hyun-Seok Jang, So-Hyeon Kim, Gyu-Chae Jung（MIT License）。</p>
+    <p>本文档为团队内部技术摘要，所有代码、阈值、参数均可向上游源码核对。如有冲突以 <code>ReferenceCode/Opensourse/csi-pose/</code> 源码为准。</p>
+    <p>浏览器原生 <kbd>Ctrl</kbd>+<kbd>F</kbd> 可全文搜索。</p>
+  </div>
+</footer>
+
+</body>
+</html>
