@@ -1,6 +1,6 @@
-"""QA 수동 감사 — 무작위/전수 프레임 추출, 오버레이, 단일 HTML 갤러리, 게이트 집계.
+"""QA manual audit — random/exhaustive frame extraction, overlay, single HTML gallery, gate aggregation.
 
-게이트: 교사 실패율(오검출·관절 붕괴) < 2% (설계 §7) — 2.0% 정확히는 FAIL."""
+Gate: teacher failure rate (false detection·joint collapse) < 2% (design §7) — 2.0% or higher = FAIL."""
 import json
 import re
 from pathlib import Path
@@ -10,7 +10,7 @@ import numpy as np
 
 GATE_MAX = 0.02
 STATUS_NAMES = {0: "ok", 1: "no_person", 2: "multi"}
-# OpenPose BODY-18 림 — 표준 스켈레톤 토폴로지 (https://github.com/geekfeiw/WiSPPN test_pam.py와 동일 순서)
+# OpenPose BODY-18 limb — standard skeleton topology (same order as WiSPPN test_pam.py)
 LIMBS18 = np.array([[0, 1], [0, 14], [0, 15], [14, 16], [15, 17], [1, 2], [1, 5],
                     [1, 8], [1, 11], [2, 3], [3, 4], [5, 6], [6, 7], [8, 9],
                     [9, 10], [11, 12], [12, 13]])
@@ -20,8 +20,8 @@ _HTML = """<!doctype html><meta charset="utf-8"><title>QA %%GID%%</title>
 img{max-width:96vw;max-height:80vh}#bar{margin:8px}.f{color:#f55}.p{color:#5f5}
 button{margin:8px;padding:4px 12px}</style>
 <div id="bar"></div><img id="im"><div id="st"></div>
-<div>o = pass · x = fail · ←/→ 이동</div>
-<button onclick="exp()">판정 JSON 내보내기</button>
+<div>o = pass · x = fail · <-/-> navigate</div>
+<button onclick="exp()">Export verdict JSON</button>
 <script>
 const ITEMS=%%ITEMS%%;
 const KEY="qa-%%GID%%";let cur=0;
@@ -29,9 +29,9 @@ let V=JSON.parse(localStorage.getItem(KEY)||"{}");
 function draw(){const it=ITEMS[cur];im.src=it.src;
  const v=V[it.f]||"";
  st.innerHTML=(cur+1)+"/"+ITEMS.length+" — frame "+it.f+" ["+it.status+"] "+
-   (v?("판정: <b class="+(v=="fail"?"f":"p")+">"+v+"</b>"):"미판정");
+   (v?("Verdict: <b class="+(v=="fail"?"f":"p")+">"+v+"</b>"):"Unjudged");
  const n=Object.keys(V).length,nf=Object.values(V).filter(x=>x=="fail").length;
- bar.textContent="판정 "+n+"/"+ITEMS.length+" · fail "+nf;}
+ bar.textContent="Verdict "+n+"/"+ITEMS.length+" · fail "+nf;}
 function set(v){V[ITEMS[cur].f]=v;localStorage.setItem(KEY,JSON.stringify(V));
  if(cur<ITEMS.length-1)cur++;draw();}
 function exp(){const out={_total:ITEMS.length};
@@ -47,7 +47,7 @@ draw();
 
 
 def pick_frames(F, *, k=200, seed=7, all_frames=False):
-    """상태 불문 전 프레임에서 무작위 K (결정적) — S04는 all_frames=True."""
+    """Random K frames from all frames regardless of status (deterministic) — use all_frames=True for S04."""
     if all_frames or F <= k:
         return np.arange(F)
     rng = np.random.default_rng(seed)
@@ -55,7 +55,7 @@ def pick_frames(F, *, k=200, seed=7, all_frames=False):
 
 
 def _pti(p):
-    """그리기용 int 좌표 — int32 초과 이상치 클립 (cv2 오버플로 방지)."""
+    """int coordinates for drawing — clip outliers exceeding int32 (prevent cv2 overflow)."""
     return tuple(np.clip(p, -1_000_000_000, 1_000_000_000).astype(int))
 
 
@@ -80,21 +80,21 @@ def render_overlay(frame, pose18, *, status, det_score):
 
 
 def build_gallery(out_dir, mp4_path, pose18, status, det_score, idxs, *, gid):
-    """선정 프레임들의 오버레이 JPEG + index.html — 반환: html 경로."""
+    """Overlay JPEGs for selected frames + index.html — returns: html path."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     want = {int(i) for i in idxs}
     items = []
     cap = cv2.VideoCapture(str(mp4_path))
     if not cap.isOpened():
-        raise SystemExit(f"mp4 열기 실패: {mp4_path}")
+        raise SystemExit(f"Failed to open mp4: {mp4_path}")
     try:
         f = 0
         while want:
             ok, frame = cap.read()
             if not ok:
                 raise SystemExit(
-                    f"mp4가 프레임 {min(want)} 전에 끝남 — 라벨과 영상이 다른 세션?")
+                    f"mp4 ended before frame {min(want)} — label and video from different sessions?")
             if f in want:
                 want.discard(f)
                 img = render_overlay(frame, pose18[f], status=status[f],
@@ -116,25 +116,27 @@ def build_gallery(out_dir, mp4_path, pose18, status, det_score, idxs, *, gid):
 
 
 def aggregate(paths):
-    """판정 JSON들 합산 → (per_file, judged, fails, rate).
+    """Sum verdict JSONs -> (per_file, judged, fails, rate).
 
-    빈 판정·이상값·미완(judged < _total) fail-loud — 게이트 분모 무결성."""
+    Empty/invalid/incomplete (judged < _total) verdicts are fail-loud — gate denominator integrity.
+
+    """
     per, judged, fails = [], 0, 0
     for p in paths:
         v = json.loads(Path(p).read_text(encoding="utf-8"))
         total = v.pop("_total", None)
         bad = [k for k, s in v.items() if s not in ("pass", "fail")]
         if bad:
-            raise SystemExit(f"{p}: 알 수 없는 판정값 {bad[:3]}")
+            raise SystemExit(f"{p}: Unknown verdict value {bad[:3]}")
         if total is not None and len(v) < int(total):
             raise SystemExit(
-                f"{p}: 미판정 {int(total) - len(v)}장 — 전 프레임 o/x 판정 후 내보내기 (게이트 분모 무결성)")
+                f"{p}: Unjudged {int(total) - len(v)} frames — judge all frames o/x before exporting (gate denominator integrity)")
         f = sum(1 for s in v.values() if s == "fail")
         per.append((str(p), len(v), f))
         judged += len(v)
         fails += f
     if judged == 0:
-        raise SystemExit("판정이 하나도 없음 — 갤러리에서 o/x 판정 후 내보내기부터")
+        raise SystemExit("No verdicts — export from gallery after o/x judgment")
     return per, judged, fails, fails / judged
 
 

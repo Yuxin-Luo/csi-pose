@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""웹캠 라이브 스켈레톤 뷰어 — 화각·트래킹 즉석 점검용 (Windows에서 실행).
+"""Webcam live skeleton viewer — for field-of-view and tracking verification (run on Windows).
 
-teacher의 RTMDet→RTMPose 러너를 그대로 재사용해 COCO-17 골격을 실시간 오버레이.
-수집 파이프라인 무관(MQTT·저장 없음).
+Reuses RTMDet->RTMPose runner from teacher for real-time COCO-17 skeleton overlay.
+Independent of collection pipeline (no MQTT or storage).
 
-    python host\\tools\\live_skeleton.py                # 기본: cam0·MSMF·720p·CPU
-    python host\\tools\\live_skeleton.py --device cuda  # GPU EP 설치 시
+    python host\\tools\\live_skeleton.py                # Default: cam0, MSMF, 720p, CPU
+    python host\\tools\\live_skeleton.py --device cuda  # With GPU EP installed
 
-키: ESC/q 종료, m 미러 토글. 첫 실행은 모델 ~120MB 자동 다운로드.
-⚠ MSMF 카메라 단일 점유 — cam_capture.py 기동 전 반드시 종료.
+Keys: ESC/q to quit, m to toggle mirror. First run auto-downloads models (~120MB).
+NOTE: MSMF camera is single-occupancy — must quit before running cam_capture.py.
 """
 import argparse
 import sys
@@ -17,18 +17,18 @@ from pathlib import Path
 
 import numpy as np
 
-# 추적 파라미터 (스펙 §요구 — CPU 실시간화 2-모드 루프)
-SEARCH_DET_EVERY = 10   # 탐색 모드: det 주기 (프레임)
-TRACK_DET_PERIOD = 1.0  # 추적 모드: det 재확인 주기 (초)
-KPT_THR = 0.3           # 유효 관절·인물 드랍 판정 score
-MIN_VALID_KPTS = 4      # 외접박스 최소 유효 관절 수
-BBOX_MARGIN = 0.2       # bbox 승계 마진 비율
+# Tracking parameters (spec Section requirements — CPU real-time 2-mode loop)
+SEARCH_DET_EVERY = 10   # Search mode: detection period (frames)
+TRACK_DET_PERIOD = 1.0  # Track mode: detection re-check period (seconds)
+KPT_THR = 0.3           # Valid keypoint/person drop threshold score
+MIN_VALID_KPTS = 4      # Minimum valid keypoints for bounding box
+BBOX_MARGIN = 0.2       # Bbox inheritance margin ratio
 MAX_PERSONS = 3
-READ_FAIL_MAX = 30      # 연속 read 실패 한도
+READ_FAIL_MAX = 30      # Continuous read failure limit
 
 
 def kpts_to_bbox(kpts, score_thr, margin, frame_wh):
-    """(17,3)[x,y,score] → 유효 관절 외접박스+마진(프레임 클립). frame_wh=(width,height). 유효 <4 → None."""
+    """(17,3)[x,y,score] -> valid keypoint bounding box with margin (frame clipped). frame_wh=(width,height). Valid <4 -> None."""
     k = np.asarray(kpts, np.float32)
     pts = k[k[:, 2] >= score_thr, :2]
     if len(pts) < MIN_VALID_KPTS:
@@ -42,17 +42,17 @@ def kpts_to_bbox(kpts, score_thr, margin, frame_wh):
 
 
 class ViewerCore:
-    """탐색/추적 2-모드 스케줄러 — runner 주입식 (cv2 GUI·카메라 무의존).
+    """Search/track 2-mode scheduler — runner is injected (cv2 GUI, camera independent).
 
-    탐색(추적 인원 0): det를 SEARCH_DET_EVERY 프레임마다.
-    추적: 매 프레임 pose-only(bbox는 직전 키포인트 외접박스 승계),
-          det 재확인 TRACK_DET_PERIOD마다 — 신규 인물 반영·추적 종료 판단 겸함.
+    Search (0 tracked): detect every SEARCH_DET_EVERY frames.
+    Track: pose-only each frame (bbox inherited from previous keypoint bounding box),
+           detect re-check every TRACK_DET_PERIOD — handles new people and tracks end.
     """
 
     def __init__(self, runner, det_thr=0.5):
         self.runner = runner
         self.det_thr = det_thr
-        self.bboxes = []          # 추적 중 인물별 (4,) bbox — 비면 탐색 모드
+        self.bboxes = []          # Per tracked person (4,) bbox — empty means search mode
         self.det_ms = 0.0
         self.pose_ms = 0.0
         self._frame_idx = 0
@@ -68,13 +68,13 @@ class ViewerCore:
         return now - self._last_det_t >= TRACK_DET_PERIOD
 
     def step(self, frame, now):
-        """1프레임 처리 → (인물별 (17,3) kpts 리스트, hud dict)."""
+        """Process 1 frame -> (list of per-person (17,3) kpts, hud dict)."""
         if self._det_due(now):
             t0 = time.perf_counter()
             dets = self.runner.detect(frame)
             self.det_ms = (time.perf_counter() - t0) * 1e3
             self._last_det_t = now
-            # dets는 runner가 score 내림차순 보장(runner.py detect) — [:MAX_PERSONS]가 상위 N
+            # runner guarantees dets sorted by score descending (runner.py detect) — [:MAX_PERSONS] is top N
             self.bboxes = [d[:4] for d in dets if d[4] >= self.det_thr][:MAX_PERSONS]
 
         h, w = frame.shape[:2]
@@ -83,7 +83,7 @@ class ViewerCore:
         for bbox in self.bboxes:
             kpts = self.runner.pose(frame, bbox)
             if kpts[:, 2].mean() < KPT_THR:
-                continue                      # 저신뢰 인물 드랍 — 전원 소실 시 탐색 복귀
+                continue                      # Drop low-confidence person — if all lost, return to search
             nb = kpts_to_bbox(kpts, KPT_THR, BBOX_MARGIN, (w, h))
             if nb is None:
                 continue
@@ -99,17 +99,16 @@ class ViewerCore:
 def build_parser():
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--camera", type=int, default=0, help="카메라 인덱스 (기본 0)")
+    ap.add_argument("--camera", type=int, default=0, help="Camera index (default 0)")
     ap.add_argument("--backend", choices=["msmf", "dshow", "any"], default="msmf",
-                    help="cv2 캡처 백엔드 (cam_capture 동형 — MSMF가 30fps 협상)")
+                    help="cv2 capture backend (same as cam_capture — MSMF negotiates 30fps)")
     ap.add_argument("--width", type=int, default=1280)
     ap.add_argument("--height", type=int, default=720)
     ap.add_argument("--device", default="cpu", choices=["cpu", "cuda", "auto"],
-                    help="추론 디바이스 — Windows 기본 cpu (auto는 CUDA 시도 후 "
-                         "폴백이라 모델 이중 초기화)")
+                    help="Inference device — Windows default cpu (auto tries CUDA then falls back, causing double model init)")
     ap.add_argument("--det-thr", type=float, default=0.5, dest="det_thr",
-                    help="사람 검출 score 임계 (기본 0.5)")
-    ap.add_argument("--mirror", action="store_true", help="미러 표시로 시작 (m 토글)")
+                    help="Person detection score threshold (default 0.5)")
+    ap.add_argument("--mirror", action="store_true", help="Start with mirror display (toggle with m)")
     return ap
 
 
@@ -119,8 +118,8 @@ def main(argv=None):
     try:
         import cv2
         from rtmlib import draw_skeleton
-    except ImportError as e:                  # 미설치 안내 (스펙 §사전 설치)
-        print(f"오류: 의존성 미설치({e.name}) — Windows PowerShell에서:\n"
+    except ImportError as e:                  # Not installed guide (spec Section prerequisites)
+        print(f"Error: dependency not installed ({e.name}) — in Windows PowerShell run:\n"
               "  pip install --no-deps rtmlib==0.0.15\n"
               "  pip install onnxruntime tqdm", file=sys.stderr)
         return 1
@@ -128,23 +127,23 @@ def main(argv=None):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "teacher"))
     from csi_teacher.runner import make_runner
 
-    print("[live] 러너 초기화 — 첫 실행은 모델 ~120MB 자동 다운로드", flush=True)
+    print("[live] Initializing runner — first run auto-downloads models (~120MB)", flush=True)
     core = ViewerCore(make_runner(device=args.device), det_thr=args.det_thr)
 
-    # 카메라 오픈 — cam_capture.py §③④ 동형 (MSMF 기본·MJPG 선설정·버퍼 1)
+    # Camera open — same as cam_capture.py Section 3,4 (MSMF default, MJPG first, buffer 1)
     backends = {"msmf": "CAP_MSMF", "dshow": "CAP_DSHOW", "any": None}
     bk = backends[args.backend]
     cap = (cv2.VideoCapture(args.camera, getattr(cv2, bk))
            if bk and hasattr(cv2, bk) else cv2.VideoCapture(args.camera))
     if not cap.isOpened():
-        print(f"오류: 카메라 {args.camera} 오픈 실패 — --camera/--backend 확인, "
-              "점유 프로세스(cam_capture 등) 종료", file=sys.stderr)
+        print(f"Error: failed to open camera {args.camera} — check --camera/--backend, "
+              "close occupying processes (cam_capture etc.)", file=sys.stderr)
         return 1
     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, args.width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, args.height)
     try:
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)   # 최신 프레임 우선
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)   # Newest frame first
     except Exception:
         pass
 
@@ -158,13 +157,13 @@ def main(argv=None):
             if not ok:
                 fails += 1
                 if fails >= READ_FAIL_MAX:
-                    print(f"오류: 프레임 read 연속 {READ_FAIL_MAX}회 실패",
+                    print(f"Error: frame read failed {READ_FAIL_MAX} consecutive times",
                           file=sys.stderr)
                     return 1
                 continue
             fails = 0
             if mirror:
-                frame = cv2.flip(frame, 1)    # 추론 전에 뒤집어 좌표계 일치
+                frame = cv2.flip(frame, 1)    # Flip before inference to match coordinate system
 
             now = time.monotonic()
             persons, hud = core.step(frame, now)
@@ -173,7 +172,7 @@ def main(argv=None):
             fps = (1.0 / dt) if fps == 0.0 else fps * 0.9 + (1.0 / dt) * 0.1
 
             if persons:
-                k = np.stack(persons)         # draw_skeleton은 배치 (N,17,…)만 허용
+                k = np.stack(persons)         # draw_skeleton only accepts batched (N,17,...) input
                 frame = draw_skeleton(frame, k[:, :, :2], k[:, :, 2],
                                       openpose_skeleton=False, kpt_thr=KPT_THR)
             txt = (f"fps {fps:4.1f}  det {hud['det_ms']:5.1f}ms  "
@@ -191,9 +190,9 @@ def main(argv=None):
                 break
             if key == ord("m"):
                 mirror = not mirror
-                core.bboxes = []              # 좌표계 반전 — 승계 bbox 무효화
+                core.bboxes = []              # Coordinate system flipped — invalidate inherited bboxes
             if cv2.getWindowProperty("live_skeleton", cv2.WND_PROP_VISIBLE) < 1:
-                break                         # X 버튼 닫힘 — 다음 imshow가 창 재생성하기 전 종료
+                break                         # X button closed — exit before next imshow recreates window
     finally:
         cap.release()
         cv2.destroyAllWindows()

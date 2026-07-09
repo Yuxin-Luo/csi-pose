@@ -1,15 +1,9 @@
 #!/usr/bin/env python3
-"""세션 h5 시간순 물리 분할 — 단일 세션 train/val.
-
-samples/·labels/의 행 정렬 데이터셋을 t_ns 순서 그대로 앞 frac(train)/뒤
-1−frac(val)로 슬라이스해 두 파일을 만든다. 경계 갭(gap-s — 윈도 스팬 ~2.8s
-중첩 누수 차단) 구간 행은 train 쪽에서 제외한다(val 보존 우선). grid/links/
-video 등 비학습 그룹은 복사하지 않는다(csi_train.data.load_session 비사용).
-
-예) python3 train/split_session.py \\
-        --h5 host/sessions/SESSION-YYYYMMDD-HHMMSS.h5 \\
-        --out-dir ~/data
-"""
+# Session h5 chronological physical split — single session train/val.
+# Row-aligned datasets in samples/·labels/ are sliced by t_ns order into front frac(train)/back 1-frac(val).
+# Boundary gap (gap-s — window span ~2.8s overlap leak blocking) rows excluded from train (val preservation priority).
+# Non-learning groups like grid/links/video not copied (csi_train.data.load_session not used).
+# Example: python3 train/split_session.py --h5 host/sessions/SESSION-YYYYMMDD-HHMMSS.h5 --out-dir ~/data
 import argparse
 import sys
 from pathlib import Path
@@ -17,28 +11,31 @@ from pathlib import Path
 import h5py
 import numpy as np
 
-ROW_GROUPS = ("samples", "labels")     # 행 정렬 그룹만 복사 — 나머지는 비학습
+ROW_GROUPS = ("samples", "labels")     # Only copy row-aligned groups — rest are non-learning
 
 
 def split_indices(t_ns, frac, gap_ns):
-    """t_ns(단조) → (train bool, val bool, cut_t). 갭 행은 양쪽 모두 False."""
+    # t_ns (monotonic) -> (train bool, val bool, cut_t). Gap rows are False for both.
     t = t_ns.astype(np.int64)
     if np.any(np.diff(t) < 0):
-        raise SystemExit("samples/t_ns 비단조 — 레코더 규약 위반, 분할 불가")
+        # samples/t_ns non-monotonic — recorder convention violation, cannot split
+        raise SystemExit("samples/t_ns non-monotonic -- recorder convention violation, cannot split")
     idx_cut = int(len(t) * frac)
     if idx_cut <= 0 or idx_cut >= len(t):
-        raise SystemExit(f"분할 경계 무효(idx_cut={idx_cut}, N={len(t)}) — frac 확인")
+        # Invalid split boundary
+        raise SystemExit(f"Invalid split boundary (idx_cut={idx_cut}, N={len(t)}) -- check frac")
     cut_t = int(t[idx_cut])
     val = np.zeros(len(t), bool)
     val[idx_cut:] = True
     train = (~val) & (t < cut_t - int(gap_ns))
     if not train.any():
-        raise SystemExit("train 0행(갭 과대 또는 세션 과소)")
+        # train 0 rows (gap too large or session too small)
+        raise SystemExit("train 0 rows (gap too large or session too small)")
     return train, val, cut_t
 
 
 def write_split(src, dst, rows, *, role, frac, gap_s, cut_t_ns):
-    """src의 행 정렬 그룹(ROW_GROUPS)을 rows 마스크로 슬라이스해 dst에 기록."""
+    # Slice src row-aligned groups (ROW_GROUPS) by rows mask and write to dst.
     with h5py.File(src, "r") as hi, h5py.File(dst, "w") as ho:
         for k, v in hi.attrs.items():
             ho.attrs[k] = v
@@ -50,10 +47,11 @@ def write_split(src, dst, rows, *, role, frac, gap_s, cut_t_ns):
             for k, v in gi.attrs.items():
                 go.attrs[k] = v
             if "F" in go.attrs:
-                go.attrs["F"] = n              # 행수 attr는 슬라이스 후 값으로 정정
+                go.attrs["F"] = n              # row count attr corrected after slice
             for name, ds in gi.items():
                 if not isinstance(ds, h5py.Dataset) or ds.shape[0] != len(rows):
-                    raise SystemExit(f"{gname}/{name}: 행 정렬 아님 — 분할 불가")
+                    # Not row-aligned — cannot split
+                    raise SystemExit(f"{gname}/{name}: not row-aligned -- cannot split")
                 go.create_dataset(name, data=ds[...][rows])
         ho.attrs["split_source"] = str(src)
         ho.attrs["split_role"] = role
@@ -73,7 +71,7 @@ def main(argv=None):
     a = ap.parse_args(argv)
     src = Path(a.h5)
     if not src.exists():
-        raise SystemExit(f"입력 h5 없음: {src}")
+        raise SystemExit(f"Input h5 not found: {src}")
     out_dir = Path(a.out_dir).expanduser()
     out_dir.mkdir(parents=True, exist_ok=True)
     with h5py.File(src, "r") as h:
@@ -86,7 +84,7 @@ def main(argv=None):
                         gap_s=a.gap_s, cut_t_ns=cut_t)
         total += n
         print(f"{role}: {dst}  rows={n}")
-    print(f"갭 제외 {len(t_ns) - total}행 / 전체 {len(t_ns)}행 (cut_t_ns={cut_t})")
+    print(f"Gap exclusion {len(t_ns) - total} rows / total {len(t_ns)} rows (cut_t_ns={cut_t})")
     return 0
 
 

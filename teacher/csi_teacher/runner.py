@@ -1,22 +1,23 @@
-"""rtmlib 어댑터 — RTMDet-m(사람)→RTMPose-m (설계 §7). rtmlib 의존은 이 모듈 격리.
+"""rtmlib adapter — RTMDet-m(person)->RTMPose-m (design §7). rtmlib dependency isolated in this module.
 
-PoseRunner 프로토콜:
-  detect(frame_bgr) -> (N,5) f32 [x1,y1,x2,y2,score] — floor 이상 전부, score 내림차순
+PoseRunner protocol:
+  detect(frame_bgr) -> (N,5) f32 [x1,y1,x2,y2,score] — all above floor, sorted by score descending
   pose(frame_bgr, bbox4) -> (17,3) f32 [x_px, y_px, score]
 
-det_thr 필터는 labels.label_frame 몫 — floor(0.05)만 깔아 임계 변경에 재추론 불필요.
+det_thr filter is the floor in labels.label_frame quotient — only floor(0.05) is baked in, no need to
+re-infer when threshold changes.
 
-실측(rtmlib 0.0.15):
-  - RTMDet ONNX(coco-obj365-person) 출력: dets (1,N,5)[x1,y1,x2,y2,score] +
-    labels (1,N)[cls_int] — NMS 포함 export. ratio는 preprocess 반환, 역변환 필요.
-  - RTMDet.__call__은 점수 버리고 박스만 반환 → detect()에서
-    preprocess+inference 직접 호출.
-  - session 속성명: BaseTool.session (onnxruntime.InferenceSession).
+Measurements (rtmlib 0.0.15):
+  - RTMDet ONNX(coco-obj365-person) output: dets (1,N,5)[x1,y1,x2,y2,score] +
+    labels (1,N)[cls_int] — NMS included in export. ratio returned by preprocess, inverse transform needed.
+  - RTMDet.__call__ discards scores and returns boxes only -> detect() calls
+    preprocess+inference directly.
+  - session attribute name: BaseTool.session (onnxruntime.InferenceSession).
 """
 import numpy as np
 
-# mmpose deployee ONNX — 계획 URL(projects/rtmo/...rtmdet_m_640-8xb32_coco-person)은 404,
-# 실존 경로는 rtmposev1/onnx_sdk의 coco-obj365-person export (404 시 rtmlib README 최신으로 교체)
+# mmpose deployee ONNX — planned URL(projects/rtmo/...rtmdet_m_640-8xb32_coco-person) returns 404,
+# actual path is rtmposev1/onnx_sdk coco-obj365-person export (replace with rtmlib README if 404)
 DET_ONNX = ("https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/"
             "rtmdet_m_8xb32-100e_coco-obj365-person-235e8209.zip")
 POSE_ONNX = ("https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/"
@@ -31,12 +32,12 @@ class RtmlibRunner:
 
     def __init__(self, device="cuda"):
         try:
-            # pip nvidia-*-cu12 라이브러리를 ORT가 찾도록 선로드 (ORT 1.21+ API).
-            # 미호출 시 libcublasLt.so.12 미발견 → CUDA EP 로드 실패, CPU 폴백 (WSL2 실측).
+            # Pre-load CUDA libs so ORT can find them (ORT 1.21+ API).
+            # Without this call, libcublasLt.so.12 is not found -> CUDA EP load fails, CPU fallback (WSL2 measured).
             import onnxruntime as ort
             ort.preload_dlls()
         except Exception:
-            pass                                 # 구버전 ORT — 시스템 CUDA에 맡김
+            pass                                 # Old ORT version — rely on system CUDA
         from rtmlib import RTMDet, RTMPose
         self._det = RTMDet(onnx_model=DET_ONNX, model_input_size=(640, 640),
                            backend="onnxruntime", device=device)
@@ -46,16 +47,16 @@ class RtmlibRunner:
             for s in (self._det.session, self._pose.session):
                 prov = s.get_providers()
                 if "CUDAExecutionProvider" not in prov:
-                    # ORT는 EP 로드 실패 시 CPU로 폴백해 세션을 만든다 — auto 폴백 로직이 잡도록 격상
-                    raise RuntimeError(f"CUDA EP 비활성 — providers={prov}")
+                    # ORT falls back to CPU when EP load fails — let auto-fallback logic catch it
+                    raise RuntimeError(f"CUDA EP not active — providers={prov}")
 
     def detect(self, frame_bgr):
-        """RTMDet 추론 → (N,5) [x1,y1,x2,y2,score], floor 이상 전부, score 내림차순.
+        """RTMDet inference -> (N,5) [x1,y1,x2,y2,score], all above floor, sorted by score descending.
 
-        RTMDet ONNX(coco-obj365-person)는 NMS 내장 export:
-          outputs[0] = dets  (1, N, 5) [x1,y1,x2,y2,score] — 모델 입력 좌표계
+        RTMDet ONNX(coco-obj365-person) has NMS built into export:
+          outputs[0] = dets  (1, N, 5) [x1,y1,x2,y2,score] — model input coordinate system
           outputs[1] = labels (1, N)   int64 class id
-        preprocess가 반환하는 ratio로 역변환해 원본 픽셀 좌표계로 복원.
+        Inverse-transform to original pixel coordinates using ratio returned by preprocess.
         """
         img, ratio = self._det.preprocess(frame_bgr)
         outputs = self._det.inference(img)
@@ -66,7 +67,7 @@ class RtmlibRunner:
         return out[np.argsort(-out[:, 4])]
 
     def pose(self, frame_bgr, bbox):
-        """RTMPose 추론 → (17,3) [x_px, y_px, score]."""
+        """RTMPose inference -> (17,3) [x_px, y_px, score]."""
         kpts, scores = self._pose(frame_bgr, bboxes=[np.asarray(bbox, np.float32)])
         return np.concatenate([kpts[0], scores[0][:, None]], axis=1).astype(np.float32)
 
@@ -79,5 +80,5 @@ def make_runner(device="auto"):
         print("runner: CUDA EP")
         return r
     except Exception as e:
-        print(f"경고: CUDA 실패({type(e).__name__}: {e}) — CPU 폴백 (느림)")
+        print(f"Warning: CUDA failed ({type(e).__name__}: {e}) — CPU fallback (slow)")
         return RtmlibRunner(device="cpu")

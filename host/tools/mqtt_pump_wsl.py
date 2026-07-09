@@ -1,16 +1,16 @@
-"""Windows→WSL MQTT 중계 — WSL NAT 인바운드 차단 우회 (rt 라이브 데모용).
+"""Windows->WSL MQTT relay -- bypass WSL NAT inbound block (for rt live demo).
 
-배경: mosquitto 서비스는 127.0.0.1 전용 바인딩이고 Windows 방화벽이
-WSL→호스트 인바운드를 막아(실측 시), WSL rt 데모가 직접 구독할 수 없다.
-Windows→WSL 아웃바운드는 허용되므로 방향을 뒤집는다: 이 스크립트가
-mosquitto(127.0.0.1:1883)의 csi/#를 구독해 WSL 측 브로커(amqtt)로 재발행.
+Background: mosquitto service binds to 127.0.0.1 only, and Windows Firewall blocks
+WSL->host inbound (measured). So the WSL rt demo cannot subscribe directly.
+Windows->WSL outbound is allowed, so we reverse the direction: this script subscribes to
+mosquitto (127.0.0.1:1883) on csi/# and republishes to the WSL-side broker (amqtt).
 
-사용 (Windows, Espressif python — bridge.py와 동일 env):
+Usage (Windows, Espressif python -- same env as bridge.py):
     python tools\\mqtt_pump_wsl.py --wsl-host <WSL eth0 IP>
 
-WSL 측 브로커는 /tmp/mqtt-broker-venv/run_broker.py (임시 — WSL 재시작 시 소멸).
-영구 해법은 .wslconfig networkingMode=mirrored (rt.yaml 주석 전제) 또는
-mosquitto conf 리스너 추가+방화벽 규칙(관리자).
+WSL broker is /tmp/mqtt-broker-venv/run_broker.py (temporary -- destroyed when WSL restarts).
+Permanent solution: .wslconfig networkingMode=mirrored (assumed in rt.yaml comments) or
+add mosquitto conf listener + firewall rule (admin).
 """
 import argparse
 import sys
@@ -27,8 +27,8 @@ def make_client():
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--wsl-host", required=True, help="WSL eth0 IP (wsl에서 `ip addr show eth0`로 확인)")
-    ap.add_argument("--src-host", default="127.0.0.1", help="mosquitto 호스트")
+    ap.add_argument("--wsl-host", required=True, help="WSL eth0 IP (check with `ip addr show eth0` in WSL)")
+    ap.add_argument("--src-host", default="127.0.0.1", help="mosquitto host")
     ap.add_argument("--topic", default="csi/#")
     args = ap.parse_args()
 
@@ -36,7 +36,7 @@ def main():
     relayed = [0]
 
     def on_connect(client, userdata, flags, rc, *extra):
-        print(f"[pump] sub connected rc={rc} → subscribe {args.topic}", flush=True)
+        print(f"[pump] sub connected rc={rc} -> subscribe {args.topic}", flush=True)
         client.subscribe(args.topic, qos=0)
 
     def on_message(client, userdata, msg):
@@ -51,14 +51,14 @@ def main():
     try:
         pub.connect(args.wsl_host, 1883, keepalive=30)
     except OSError as e:
-        sys.exit(f"[pump] WSL 브로커 접속 실패 {args.wsl_host}:1883 ({e}) — "
-                 "WSL에서 run_broker.py 가동 여부 확인")
+        sys.exit(f"[pump] WSL broker connection failed {args.wsl_host}:1883 ({e}) -- "
+                 "check if run_broker.py is running in WSL")
     pub.loop_start()
 
     try:
         sub.connect(args.src_host, 1883, keepalive=30)
     except OSError as e:
-        sys.exit(f"[pump] mosquitto 접속 실패 {args.src_host}:1883 ({e})")
+        sys.exit(f"[pump] mosquitto connection failed {args.src_host}:1883 ({e})")
     print("[pump] start", flush=True)
     sub.loop_forever()
 

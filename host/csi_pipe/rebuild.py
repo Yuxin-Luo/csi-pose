@@ -1,7 +1,7 @@
-"""rawlog(브리지 원본) → HDF5 세션 재구축.
+"""Rebuild session HDF5 from rawlog (bridge original).
 
-unwrap은 rx 보드 단위로 파일 경계를 넘어 연속 (브리지 재시작으로 로그가 쪼개져도
-boot_id가 같으면 같은 에포크). StreamParser는 파일마다 새로 (리싱크 경계)."""
+unwrap is continuous across file boundaries per rx board (if boot_id is the same, it's the same epoch
+even if bridge restart splits the log). StreamParser is per file (re-sync boundary)."""
 from csi_host.framing import StreamParser
 from csi_host.rawlog import read_rawlog
 from csi_host.unwrap import TimeUnwrapper
@@ -10,7 +10,7 @@ from .store import SessionWriter
 
 
 def rebuild_session(rx_paths, out_path, *, session, extra_meta=None, progress=None):
-    """rx_paths: {rx_id: [rawlog 경로 (시간순)]} → out_path HDF5. {rx: {frames, crc, mismatch}} 반환."""
+    """rx_paths: {rx_id: [rawlog paths (chronological)]} -> out_path HDF5. Returns {rx: {frames, crc, mismatch}}."""
     meta = {"session": session,
             "sources": {str(rx): [str(p) for p in ps] for rx, ps in rx_paths.items()}}
     meta.update(extra_meta or {})
@@ -37,15 +37,15 @@ def rebuild_session(rx_paths, out_path, *, session, extra_meta=None, progress=No
                         frames += 1
                 crc += parser.crc_errors
                 if progress:
-                    progress(f"rx{rx_id} {p}: 누적 {frames}프레임")
+                    progress(f"rx{rx_id} {p}: cumulative {frames} frames")
             stats[rx_id] = {"frames": frames, "crc": crc, "mismatch": mismatch}
             w.set_meta(f"rx{rx_id}_crc_errors", crc)
     except BaseException:
         try:
-            w.close()       # 파손 상태의 close 실패가 원인 예외를 가리지 않게
+            w.close()       # Don't obscure the real exception with close failure in corrupted state
         except Exception:
             pass
         raise
     else:
-        w.close()           # 정상 경로에서는 close 오류도 표면화
+        w.close()           # Normal path: close errors are surfaced
     return stats

@@ -1,7 +1,12 @@
-"""append-only 원본 로그 (브리지의 raw 로그가 원본, HDF5 재구축 가능).
+# """Append-only original log (bridge raw log is the original, HDF5 rebuild possible).
+#
+# File = header 8B b"CSIRAW01" + repeating records. Record = t_ns u64 LE + len u16 LE + bytes.
+# Incomplete tail (interrupted by crash) is ignored on read. Periodic flush preserves partial data on crash.
+# """
+"""Append-only original log (bridge raw log is the original, HDF5 rebuild possible).
 
-파일 = 헤더 8B b"CSIRAW01" + 레코드 반복. 레코드 = t_ns u64 LE + len u16 LE + bytes.
-불완전 꼬리(장애 중단)는 읽기에서 무시. 주기 flush로 장애 시 부분 보존.
+File = header 8B b"CSIRAW01" + repeating records. Record = t_ns u64 LE + len u16 LE + bytes.
+Incomplete tail (interrupted by crash) is ignored on read. Periodic flush preserves partial data on crash.
 """
 import struct
 
@@ -32,7 +37,7 @@ class RawLogWriter:
 
 
 def read_rawlog(path):
-    """(t_ns, bytes) 제너레이터 — 불완전 꼬리에서 조용히 종료."""
+    """(t_ns, bytes) generator -- silently terminates on incomplete tail."""
     with open(path, "rb") as f:
         if f.read(len(HEADER)) != HEADER:
             raise ValueError(f"not a rawlog (bad header): {path}")

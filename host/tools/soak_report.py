@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""야간 소크 rawlog → M0 판정.
+"""Overnight soak rawlog -> M0 verdict.
 
   python3 soak_report.py /tmp/csilogs/*.rawlog --window 22:00-07:00 --json verdict.json
 
-9P가 느리므로 rawlog는 /tmp 복사본 사용 권장 (분석 노하우).
+Since 9P is slow, using rawlog copy in /tmp is recommended (analysis tip).
 """
 import argparse
 import glob
@@ -18,17 +18,17 @@ from csi_pipe.soak import analyze_soak, render_report  # noqa: E402
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("paths", nargs="+", help="rawlog 경로 (와일드카드 허용)")
-    ap.add_argument("--window", default=None, help="무인 구간 KST, 예: 22:00-07:00")
-    ap.add_argument("--fit-window", type=float, default=600.0, help="클록핏 윈도(초)")
-    ap.add_argument("--json", default=None, help="판정 JSON 저장 경로")
+    ap.add_argument("paths", nargs="+", help="rawlog path (wildcards allowed)")
+    ap.add_argument("--window", default=None, help="Unattended interval KST, e.g.: 22:00-07:00")
+    ap.add_argument("--fit-window", type=float, default=600.0, help="Clock fit window (seconds)")
+    ap.add_argument("--json", default=None, help="Verdict JSON save path")
     args = ap.parse_args()
 
     expanded = []
     for p in args.paths:
         m = sorted(glob.glob(p)) if any(c in p for c in "*?[") else [p]
         if not m:
-            print(f"경고: 일치 없음 — {p}", file=sys.stderr)
+            print(f"Warning: no match — {p}", file=sys.stderr)
         expanded.extend(m)
     if not expanded:
         sys.exit(1)
@@ -38,7 +38,7 @@ def main():
     if args.json:
         Path(args.json).write_text(json.dumps(rep, ensure_ascii=False, indent=1),
                                    encoding="utf-8")
-        print(f"JSON 저장: {args.json}")
+        print(f"JSON saved: {args.json}")
 
 
 if __name__ == "__main__":

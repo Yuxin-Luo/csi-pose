@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""M2.5 ablation 러너 — M2 best 손실모드 승계 {phase, rssi, rssi_phase} 3런.
-"""
+# M2.5 ablation runner — M2 best loss mode inheritance {phase, rssi, rssi_phase} 3 runs.
 import argparse
 import hashlib
 import json
@@ -13,30 +12,30 @@ import run_ablation as ra  # noqa: E402
 
 SUFFIX_RUNS = [("phase", ["--phase"]), ("rssi", ["--rssi"]),
                ("rssi_phase", ["--rssi", "--phase"])]
-PRIORITY = ("amp", "rssi", "phase", "rssi_phase")   # 동률 시 단순 구성 우선(스펙 §3)
+PRIORITY = ("amp", "rssi", "phase", "rssi_phase")   # On tie, simpler config prioritized (spec Section 3)
 
 
 def load_m2(path):
-    """ablation-summary.json → {"best","pck02","gate_baseline"} | 에러 문자열."""
+    # ablation-summary.json -> {"best","pck02","gate_baseline"} | error string.
     p = Path(path)
     if not p.exists():
-        return f"M2 summary 없음: {p} — run_ablation.py 선행 필요"
+        return f"M2 summary not found: {p} -- run_ablation.py must be run first"
     try:
         s = json.loads(p.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError) as e:
-        return f"M2 summary 파손: {p} ({e})"
+        return f"M2 summary corrupted: {p} ({e})"
     best = s.get("best_run")
     if not best:
-        return f"M2 best_run 없음(전 런 실패?): {p}"
+        return f"M2 best_run not found (all runs failed?): {p}"
     entry = next((r for r in s.get("runs", []) if r.get("name") == best), None)
     if entry is None or entry.get("pck02") is None:
-        return f"M2 best_run({best})의 pck02 레코드 없음: {p}"
+        return f"M2 best_run({best}) has no pck02 record: {p}"
     return {"best": best, "pck02": float(entry["pck02"]),
             "gate_baseline": s.get("gate_baseline_pck02")}
 
 
 def derive_runs(best):
-    """M2 best 런의 fit 인자를 승계한 3런 — best가 RUNS에 없으면 None."""
+    # 3 runs inheriting M2 best run's fit parameters — returns None if best not in RUNS.
     base = next((r for r in ra.RUNS if r["name"] == best), None)
     if base is None:
         return None
@@ -45,7 +44,7 @@ def derive_runs(best):
 
 
 def final_config(m2_pck02, judged):
-    """{amp, rssi, phase, rssi_phase} pck02 argmax — 동률 시 PRIORITY 앞(> 비교 = 선착 유지)."""
+    # {amp, rssi, phase, rssi_phase} pck02 argmax — on tie, PRIORITY earlier (> comparison = first-kept).
     cand = {"amp": m2_pck02}
     cand.update({suf: j["pck02"] for (suf, _), j in zip(SUFFIX_RUNS, judged)})
     best_cfg = best_p = None
@@ -57,13 +56,13 @@ def final_config(m2_pck02, judged):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="M2.5 ablation 러너 (스펙: "
+    ap = argparse.ArgumentParser(description="M2.5 ablation runner (spec: "
                                  "docs/superpowers/specs/2026-06-12-m25-phase-design.md)")
     ap.add_argument("--config", default="configs/train.yaml")
     ap.add_argument("--out-root", default="runs")
     ap.add_argument("--m2-summary", default=None,
-                    help="기본: <out-root>/ablation-summary.json")
-    ap.add_argument("--epochs", type=int, default=None, help="단축 스모크용 fit 패스스루")
+                    help="Default: <out-root>/ablation-summary.json")
+    ap.add_argument("--epochs", type=int, default=None, help="Fit pass-through for quick smoke test")
     ap.add_argument("--device", default=None)
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args(argv)
@@ -79,18 +78,18 @@ def main(argv=None):
     else:
         runs = derive_runs(m2["best"])
         if runs is None:
-            errs.append(f"M2 best_run({m2['best']})이 RUNS 목록에 없음 — "
-                        "run_ablation 버전 불일치 의심")
+            errs.append(f"M2 best_run({m2['best']}) not in RUNS list -- "
+                        "run_ablation version mismatch suspected")
     if errs:
         for e in errs:
-            print(f"프리플라이트 실패: {e}", file=sys.stderr)
+            print(f"Preflight failure: {e}", file=sys.stderr)
         return 2
 
     if args.dry_run:
         for run in runs:
             step = ra.plan_step(out_root, run["name"])
             if step == "skip":
-                print(f"{run['name']}: 스킵(report 존재)")
+                print(f"{run['name']}: skip (report exists)")
                 continue
             if step == "full":
                 print(f"{run['name']} fit:", " ".join(
@@ -125,9 +124,9 @@ def main(argv=None):
     (out_root / "m25-summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=1), encoding="utf-8")
     ra.print_table(judged, overall, m2["gate_baseline"])
-    print("(위 표의 'M2 게이트' 줄 = M2.5 변형 3런 기준 §13 게이트)")
-    print(f"M2.5 최종 구성: {cfg_name} (pck02 {cfg_pck:.3f} / "
-          f"M2 best {m2['best']} {m2['pck02']:.3f}) — §12 기입은 사람이")
+    print("(M2 gate row above = M2.5 variant 3-run Section 13 gate)")
+    print(f"M2.5 final config: {cfg_name} (pck02 {cfg_pck:.3f} / "
+          f"M2 best {m2['best']} {m2['pck02']:.3f}) -- Section 12 entry is human")
     return 1 if any(j["status"] == "error" for j in judged) else 0
 
 

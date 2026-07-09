@@ -1,7 +1,7 @@
-"""presence 게이트 + 모델-프리 모션 에너지(안전망·낙상 결합용).
+"""Presence gate + model-free motion energy (safety net, fall combination).
 
-게이트 v1 = mean(ĉ) ≥ τ 단독. 모션 에너지 = 링크별 최근 window_s 패킷
-평균진폭의 std → 9링크 평균 (presence 판정 미사용 — HUD·fall 입력)."""
+Gate v1 = mean(c_hat) >= tau alone. Motion energy = std of recent window_s packets'
+average amplitude per link -> 9-link average (not using presence judgment — for HUD and fall input)."""
 from collections import deque
 
 import numpy as np

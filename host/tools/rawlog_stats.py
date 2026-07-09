@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""rawlog 재생 → 프레임 수/링크별 seq 갭/CRC 요약 (HDF5 재구축 경로 사전 검증).
+"""Rawlog playback -> frame count / per-link seq gap / CRC summary (HDF5 rebuild path pre-verification).
 
   python rawlog_stats.py logs/rx0-*.rawlog
 """
@@ -50,14 +50,14 @@ def summarize(path):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("paths", nargs="+", help="rawlog 경로 (와일드카드 허용 — PowerShell 미확장 대응)")
+    ap.add_argument("paths", nargs="+", help="rawlog path (wildcards allowed -- PowerShell not expanded)")
     args = ap.parse_args()
     import glob
     expanded = []
     for p in args.paths:
         matches = sorted(glob.glob(p)) if any(c in p for c in "*?[") else [p]
         if not matches:
-            print(f"경고: 일치 없음 — {p}", file=sys.stderr)
+            print(f"Warning: no match -- {p}", file=sys.stderr)
         expanded.extend(matches)
     if not expanded:
         sys.exit(1)

@@ -1,6 +1,6 @@
-/* RX (설계 §4.3): CSI 콜백 → 큐 → 프레이머 태스크 → 시리얼 921600.
- * STREAM 모드 = 130B CSI 프레임, RAW 모드 = 전체 CSI buf 덤프 (§16-6 SC 표 확정용).
- * 시리얼 명령: HELLO MAC SET_IDX SET_CH START STOP STATUS RAW n CLEAR_MACS SCAN
+/* RX (design §4.3): CSI callback → queue → framer task → serial 921600.
+ * STREAM mode = 130B CSI frame, RAW mode = full CSI buf dump (§16-6 SC table calibration).
+ * Serial commands: HELLO MAC SET_IDX SET_CH START STOP STATUS RAW n CLEAR_MACS SCAN
  */
 #include <inttypes.h>
 #include <stdbool.h>
@@ -40,11 +40,11 @@ static void framer_task(void *arg)
     csi_item_t it;
     for (;;) {
         if (xQueueReceive(s_q, &it, pdMS_TO_TICKS(100)) != pdTRUE) {
-            csi_rx_persist_macs(); /* 한가할 때 MAC 핀 영속화 */
+            csi_rx_persist_macs(); /* Persist MAC pins when idle */
             continue;
         }
         if (s_mode == M_STREAM) {
-            if (((it.flags >> 1) & 3u) != 1u) { /* HT 아님 — 11b/g CSI는 56SC 불가 */
+            if (((it.flags >> 1) & 3u) != 1u) { /* Not HT — 11b/g CSI cannot provide 56SC */
                 s_not_ht++;
                 continue;
             }
@@ -70,7 +70,7 @@ static void framer_task(void *arg)
             };
             for (int k = 0; k < CSIL_NUM_SC; k++) {
                 int w = tab[k];
-                f.iq[2 * k]     = it.buf[2 * w + 1]; /* I = real — 디바이스 [imag,real] 스왑 */
+                f.iq[2 * k]     = it.buf[2 * w + 1]; /* I = real — device [imag,real] swap */
                 f.iq[2 * k + 1] = it.buf[2 * w];     /* Q = imag */
             }
             f.crc = csil_crc16((const uint8_t *)&f, 128);
@@ -101,7 +101,7 @@ static void framer_task(void *arg)
                 csil_reply("OK RAW done\n");
             }
         }
-        /* M_IDLE: 큐 드레인만 */
+        /* M_IDLE: drain queue only */
     }
 }
 
@@ -180,7 +180,7 @@ static void handle(const char *line)
             return;
         }
         csil_reply("OK START\n");
-        csil_set_binary(true); /* 응답 후 바이너리 모드 — 이후 프레임만 송출 */
+        csil_set_binary(true); /* Binary mode after response — only frames are sent from now on */
         s_mode = M_STREAM;
         return;
     }
@@ -248,5 +248,5 @@ void app_main(void)
     BaseType_t ok = xTaskCreate(framer_task, "framer", 4096, NULL, 5, NULL);
     configASSERT(ok == pdPASS);
 
-    csil_console_run(handle); /* 복귀하지 않음 */
+    csil_console_run(handle); /* Does not return */
 }

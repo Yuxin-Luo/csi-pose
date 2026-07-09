@@ -1,12 +1,12 @@
-"""입력 어댑터 — Replay(h5 /links 병합·페이싱) / Live(MQTT, csi_host 파서 재사용).
+"""Input adapter — Replay (h5 /links merge/phasing) / Live (MQTT, reuse csi_host parser).
 
-공통 산출 = ringbuf.Pkt. Replay는 이터레이터(__iter__), Live는 drain() 폴링
-(라이브 루프가 벽시계로 절단을 구동 — demo.py).
+Common output = ringbuf.Pkt. Replay is iterator (__iter__), Live is drain() polling
+(live loop drives cutting by wall clock — demo.py).
 
-시간 재구성: 브리지는 시리얼 청크 단위로 동일 t_ns를 찍음(실측 ~11pkt·105ms 주기).
-CausalOffset으로 t̂ = esp_ns + rolling-min(t_ns − esp_ns)를 RX별로 산출, Pkt.t_ns에
-대입한다. 링크 내 단조성은 링크별 직전 t̂+1ns 클램프로 보장.
-heapq.merge는 링크 내 단조를 가정 — 링크 간 오프셋 차로 약간 어긋날 수 있으나 문제없음."""
+Time reconstruction: bridge stamps same t_ns per serial chunk (measured ~11pkt·105ms period).
+CausalOffset computes t_hat = esp_ns + rolling-min(t_ns - esp_ns) per RX, assigned to Pkt.t_ns.
+Intra-link monotonicity guaranteed by clamping to prev t_hat+1ns.
+heapq.merge assumes intra-link monotonicity — link offset differences may cause slight misalignment but no issue."""
 import heapq
 import queue
 import time
@@ -26,11 +26,12 @@ _BLK = 65536
 
 
 def _link_iter(h5_path, key, rx, tx, causal_offset, last_t):
-    """링크 1개 이터레이터 — t̂ 재구성 + 링크 내 단조 클램프 적용.
+    """Single-link iterator — t_hat reconstruction + intra-link monotonic clamp applied.
 
-    causal_offset: CausalOffset 인스턴스(RX별 공유 — 같은 RX의 3링크는 동일 시리얼 경로).
-    last_t: dict, 링크 키 → 직전 t̂ 추적(클램프용, 호출자가 관리).
-    esp_us가 없는 h5(레거시)는 t_ns 직사용으로 폴백."""
+    causal_offset: CausalOffset instance (shared per RX — 3 links on same RX share same serial path).
+    last_t: dict, link key -> previous t_hat (for clamp, managed by caller).
+    Legacy h5 without esp_us falls back to t_ns direct use."""
+
     with h5py.File(h5_path, "r") as h:
         g = h[f"links/{key}"]
         has_esp = "esp_us" in g
@@ -48,7 +49,7 @@ def _link_iter(h5_path, key, rx, tx, causal_offset, last_t):
                     t_hat = causal_offset.estimate(int(boot[i]), t_ns, esp_ns)
                 else:
                     t_hat = t_ns
-                # 링크 내 단조 클램프
+                # Intra-link monotonic clamp
                 prev = last_t.get(key, None)
                 if prev is not None and t_hat <= prev:
                     t_hat = prev + 1
@@ -62,17 +63,17 @@ class ReplaySource:
         self.h5_path, self.speed, self.fast = h5_path, float(speed), bool(fast)
         with h5py.File(h5_path, "r") as h:
             if "links" not in h or not len(h["links"]):
-                raise SystemExit(f"/links 없음: {h5_path} — 레코더 h5인지 확인")
+                raise SystemExit(f"/links not found: {h5_path} — verify this is a recorder h5")
             self._keys = sorted(h["links"])
 
     def __iter__(self):
-        # RX별 CausalOffset — 같은 RX의 3링크는 동일 시리얼 경로이므로 공유
+        # Per-RX CausalOffset — 3 links on same RX share same serial path, so share
         fits = {rx: CausalOffset() for rx in range(3)}
-        last_t = {}  # 링크 key → 직전 t̂ (단조 클램프용)
+        last_t = {}  # link key -> previous t_hat (for monotonic clamp)
         its = [_link_iter(self.h5_path, k, int(k[0]), int(k[1]),
                           fits[int(k[0])], last_t)
                for k in self._keys]
-        # heapq.merge: 링크 내 단조는 클램프로 보장; 링크 간 순서는 RingBuf에 무관
+        # heapq.merge: intra-link monotonicity guaranteed by clamp; inter-link order irrelevant to RingBuf
         merged = heapq.merge(*its, key=lambda p: p.t_ns)
         t0 = wall0 = None
         for p in merged:
@@ -86,10 +87,10 @@ class ReplaySource:
 
 
 def _iq_to_amp(iq):
-    """CsiFrame.iq (bytes 또는 ndarray) → amplitude (56,) f32.
+    """CsiFrame.iq (bytes or ndarray) -> amplitude (56,) f32.
 
-    실시간 경로: parse_frame이 반환하는 CsiFrame.iq는 112 bytes(i8×112).
-    테스트 경로: mock F.iq는 np.ndarray (56,2) int8. 양쪽 모두 처리."""
+    Realtime path: CsiFrame.iq returned by parse_frame is 112 bytes (i8×112).
+    Test path: mock F.iq is np.ndarray (56,2) int8. Handle both."""
     if isinstance(iq, (bytes, bytearray)):
         arr = np.frombuffer(iq, dtype=np.int8).reshape(56, 2)
     else:
@@ -113,18 +114,18 @@ class LiveSource:
         try:
             self._client.connect(host, port, keepalive=30)
         except OSError as e:
-            raise SystemExit(f"MQTT 접속 실패 {host}:{port} ({e}) — Windows "
-                             "mosquitto면 --mqtt-host에 호스트 IP 지정")
+            raise SystemExit(f"MQTT connection failed {host}:{port} ({e}) — if Windows mosquitto, "
+                             "specify host IP with --mqtt-host")
         self._client.loop_start()
 
     def _init_queue(self):
         from csi_host.unwrap import TimeUnwrapper
         self._q = queue.Queue()
         self.crc_drops = 0
-        # RX별 인과 시간 재구성 상태 — Replay와 동일 전략
-        self._uw = {}           # rx_id → TimeUnwrapper (u32 랩 해제)
-        self._fit = {}          # rx_id → CausalOffset
-        self._last_t = {}       # (rx, tx) → 직전 t̂ (링크 내 단조 클램프용)
+        # Per-RX causal time reconstruction state — same strategy as Replay
+        self._uw = {}           # rx_id -> TimeUnwrapper (u32 wrap unwrap)
+        self._fit = {}          # rx_id -> CausalOffset
+        self._last_t = {}       # (rx, tx) -> previous t_hat (intra-link monotonic clamp)
         self._TimeUnwrapper = TimeUnwrapper
 
     def _on_message(self, client, userdata, msg):
@@ -140,14 +141,14 @@ class LiveSource:
             self.crc_drops += 1
             return
         rx = f.rx_id
-        # esp_timer_us 언랩
+        # esp_timer_us unwrap
         uw = self._uw.setdefault(rx, self._TimeUnwrapper())
         u, _ = uw.update(boot_id=f.boot_id, t_us=f.esp_timer_us)
         esp_ns = u * 1000
-        # RX별 CausalOffset으로 t̂ 산출
+        # t_hat via per-RX CausalOffset
         fit = self._fit.setdefault(rx, CausalOffset())
         t_hat = fit.estimate(f.boot_id, t_ns, esp_ns)
-        # 링크 내 단조 클램프
+        # Intra-link monotonic clamp
         lk = (f.rx_id, f.tx_idx)
         prev = self._last_t.get(lk)
         if prev is not None and t_hat <= prev:

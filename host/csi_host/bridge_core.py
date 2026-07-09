@@ -1,8 +1,8 @@
-"""브리지 코어 — 시리얼 I/O·MQTT를 주입받는 순수 로직.
+# Bridge core — pure logic injected with serial I/O and MQTT.
+#
+# ingest(t_ns, chunk): raw log (original) -> stream parse -> link gap/unwrap aggregation -> sink publish.
+# t_host (time.time_ns) right after serial read is the timestamp origin (Section 5 principle) — caller stamps it.
 
-ingest(t_ns, chunk): raw 로그(원본) → 스트림 파스 → 링크 갭/unwrap 집계 → sink 발행.
-시리얼 read 직후의 t_host(time.time_ns)가 타임스탬프 원점 (§5 원칙) — 호출자가 찍는다.
-"""
 import struct
 
 from .framing import StreamParser
@@ -12,7 +12,7 @@ from .unwrap import TimeUnwrapper
 
 try:
     import msgpack
-except ImportError:  # 코어는 stdlib만 필수 — msgpack은 있으면 사용
+except ImportError:  # Core requires stdlib only — msgpack is optional
     msgpack = None
 
 _FALLBACK = struct.Struct("<4sQ")
@@ -20,7 +20,7 @@ _FALLBACK_MAGIC = b"CSIB"
 
 
 def pack_csi(t_ns: int, frame: bytes) -> bytes:
-    """MQTT 페이로드 패킹 — msgpack {t, f} 또는 stdlib 폴백 (정보 동일)."""
+    """MQTT payload packing — msgpack {t, f} or stdlib fallback (identical info)."""
     if msgpack is not None:
         return msgpack.packb({b"t": t_ns, b"f": frame})
     return _FALLBACK.pack(_FALLBACK_MAGIC, t_ns) + frame
@@ -69,7 +69,7 @@ class BridgeCore:
         self.frames += 1
         _, ev = self._unwrap.update(boot_id=f.boot_id, t_us=f.esp_timer_us)
         if ev == "reboot":
-            # RX 보드 리부트 — 공백 구간을 RF 손실로 오인하지 않도록 재기준 (§5)
+            # RX board reboot — rebaseline to avoid mistaking the gap as RF loss (Section 5)
             for tr in self._links.values():
                 tr.rebaseline()
             self._emit("reboot", f.boot_id)

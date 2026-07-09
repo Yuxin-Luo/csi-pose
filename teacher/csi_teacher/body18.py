@@ -1,7 +1,7 @@
-"""COCO-17 → OpenPose BODY-18 — 순수 함수, M1 게이트 단위 테스트 대상."""
+"""COCO-17 -> OpenPose BODY-18 -- pure functions, M1 gate unit test target."""
 import numpy as np
 
-# (BODY-18 idx, COCO-17 idx) — neck(1)은 합성이라 제외
+# (BODY-18 idx, COCO-17 idx) -- neck(1) is synthetic so excluded
 _DIRECT = np.array([
     (0, 0),    # nose
     (2, 6),    # RSho
@@ -25,12 +25,12 @@ L_SHO, R_SHO = 5, 6
 
 
 def coco17_to_body18(kpts17):
-    """(17,3) f32 (x_px, y_px, c) → (18,3). neck = 어깨 중점, c_neck = min.
+    """(17,3) f32 (x_px, y_px, c) -> (18,3). neck = shoulder midpoint, c_neck = min.
 
-    NaN 좌표는 그대로 전파 (어깨 한쪽 NaN → neck NaN)."""
+    NaN coordinates propagate as-is (one shoulder NaN -> neck NaN)."""
     k = np.asarray(kpts17, np.float32)
     if k.shape != (17, 3):
-        raise ValueError(f"COCO-17 형상 아님: {k.shape}")
+        raise ValueError(f"Not COCO-17 shape: {k.shape}")
     out = np.empty((18, 3), np.float32)
     out[_DIRECT[:, 0]] = k[_DIRECT[:, 1]]
     out[1, :2] = (k[L_SHO, :2] + k[R_SHO, :2]) / 2.0

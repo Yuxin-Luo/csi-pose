@@ -1,4 +1,4 @@
-"""프레임 상태 정책 + /labels·사이드카(.labels.npz) 입출력."""
+"""Frame status policy + /labels·sidecar(.labels.npz) I/O."""
 import json
 import subprocess
 from dataclasses import dataclass, field
@@ -14,16 +14,16 @@ STATUS_OK, STATUS_NO_PERSON, STATUS_MULTI = 0, 1, 2
 
 @dataclass
 class LabelResult:
-    pose18: np.ndarray          # (F,18,3) f32 — 결측 NaN
+    pose18: np.ndarray          # (F,18,3) f32 — missing data as NaN
     status: np.ndarray          # (F,) u8
-    det_score: np.ndarray       # (F,) f32 — no_person/multi NaN
+    det_score: np.ndarray       # (F,) f32 — no_person/multi as NaN
     W: int
     H: int
     attrs: dict = field(default_factory=dict)
 
 
 def label_frame(runner, frame, det_thr):
-    """단일 프레임 정책: det_thr 이상 박스 0=no_person, 1=ok(pose), ≥2=multi(폐기)."""
+    """Single-frame policy: boxes with det_thr or higher -> 0=no_person, 1=ok(pose), >=2=multi(discard)."""
     dets = np.asarray(runner.detect(frame), np.float32).reshape(-1, 5)
     dets = dets[dets[:, 4] >= det_thr]
     if len(dets) == 0:
@@ -35,11 +35,11 @@ def label_frame(runner, frame, det_thr):
 
 
 def run_label(frames, runner, *, det_thr, progress=None):
-    """프레임 이터러블 → LabelResult. (W,H)는 첫 프레임에서."""
+    """Frame iterable -> LabelResult. (W,H) from the first frame."""
     pose, stat, score = [], [], []
     W = H = None
     for i, frame in enumerate(frames):
-        # 고정 카메라 가정 — W/H는 첫 프레임에서 래치 (가변 해상도 미지원)
+        # Fixed-camera assumption — W/H latch from first frame (variable resolution not supported)
         if W is None:
             H, W = frame.shape[:2]
         s, p18, ds = label_frame(runner, frame, det_thr)
@@ -49,7 +49,7 @@ def run_label(frames, runner, *, det_thr, progress=None):
         if progress and (i + 1) % 200 == 0:
             progress(i + 1)
     if W is None:
-        raise SystemExit("프레임 0장 — mp4가 비었거나 디코드 실패")
+        raise SystemExit("0 frames — mp4 is empty or decode failed")
     return LabelResult(np.stack(pose), np.asarray(stat, np.uint8),
                        np.asarray(score, np.float32), W, H)
 
@@ -77,31 +77,31 @@ def load_npz(path):
 
 
 def check_video_mapping(h, F, *, warn):
-    """mp4 프레임 수 F vs /video — frame_idx 있으면 유실 허용, 없으면 일치 강제."""
+    """mp4 frame count F vs /video — if frame_idx exists, allow missing frames; otherwise enforce match."""
     if "video/t_ns" not in h:
-        raise SystemExit("/video/t_ns 없음 — 세션 HDF5가 아님 (mp4 단독은 --h5 생략)")
+        raise SystemExit("/video/t_ns missing — not a session HDF5 (use --h5 for mp4-only)")
     V = h["video/t_ns"].shape[0]
     if "video/frame_idx" in h:
         fi = h["video/frame_idx"][...]
         if len(fi) != V:
-            raise SystemExit(f"/video 손상: t_ns {V} ≠ frame_idx {len(fi)}")
+            raise SystemExit(f"/video corrupted: t_ns {V} != frame_idx {len(fi)}")
         if V and int(fi.max()) >= F:
-            raise SystemExit(f"frame_idx 최대 {int(fi.max())} ≥ mp4 프레임 {F} — 짝이 다른 세션?")
+            raise SystemExit(f"frame_idx max {int(fi.max())} >= mp4 frames {F} — mismatched session?")
         if V > F:
-            raise SystemExit(f"/video {V} > mp4 {F} — 짝이 다른 세션?")
+            raise SystemExit(f"/video {V} > mp4 {F} — mismatched session?")
         if V < F:
-            warn(f"cam/meta 유실 의심: /video {V} < mp4 {F} — frame_idx 매핑으로 진행")
+            warn(f"cam/meta loss suspected: /video {V} < mp4 {F} — proceeding with frame_idx mapping")
     elif V != F:
-        raise SystemExit(f"/video/t_ns {V} ≠ mp4 프레임 {F} — frame_idx 없는 구세션은 일치 필수")
+        raise SystemExit(f"/video/t_ns {V} != mp4 frames {F} — sessions without frame_idx must match exactly")
 
 
 def write_h5(h5_path, res, *, force=False, warn=print):
     with h5py.File(h5_path, "r+") as h:
         check_video_mapping(h, len(res.status), warn=warn)
         if "labels" in h and not force:
-            raise SystemExit("기존 /labels 존재 — --force로 재라벨")
+            raise SystemExit("Existing /labels exists — use --force to relabel")
         if "labels_tmp" in h:
-            del h["labels_tmp"]                  # 이전 실패 잔재 청소
+            del h["labels_tmp"]                  # Previous failed-run residue cleanup
         g = h.create_group("labels_tmp")
         g.create_dataset("pose18", data=res.pose18.astype(np.float32))
         g.create_dataset("status", data=res.status.astype(np.uint8))
@@ -111,6 +111,6 @@ def write_h5(h5_path, res, *, force=False, warn=print):
         g.attrs["F"] = int(len(res.status))
         for k, v in res.attrs.items():
             g.attrs[k] = v
-        if "labels" in h:                        # 전부 성공한 뒤에만 교체
+        if "labels" in h:                        # Replace only after full success
             del h["labels"]
         h.move("labels_tmp", "labels")

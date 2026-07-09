@@ -1,6 +1,6 @@
-/* TX 비컨 (설계 §4.2): START 후 esp_timer 주기(기본 10ms=100pps)로 ESP-NOW 브로드캐스트.
- * 페이로드 16B {magic, tx_idx, seq} — CSI는 프리앰블에서 측정되므로 식별용 최소화.
- * 시리얼 명령: HELLO MAC SET_IDX SET_CH START[rate=N] STOP STATUS SCAN
+/* TX beacon (§4.2 design): after START, ESP-NOW broadcast at esp_timer period (default 10ms=100pps).
+ * Payload 16B {magic, tx_idx, seq} — CSI measured in preamble, payload minimized for identification.
+ * Serial commands: HELLO MAC SET_IDX SET_CH START[rate=N] STOP STATUS SCAN
  */
 #include <inttypes.h>
 #include <stdbool.h>
@@ -28,9 +28,11 @@ static uint32_t s_seq, s_sent_ok, s_sent_fail;
 static uint32_t s_rate = 100;
 static uint8_t s_idx = 0xFF, s_ch, s_boot_id;
 
-/* 평균 주기 ±15% 균일 지터로 재예약 — 3TX의 등주기 위상 고정이 만드는 주기적
- * 충돌 폭풍 차단 (M0 실측: 위상 정렬 구간에서 링크 손실 5~8%).
- * 호스트가 공통 100Hz 그리드로 리샘플 하므로 지터는 무해. */
+/* Reschedule with uniform jitter ±15% of mean period — blocks periodic
+ * collision storm caused by 3TX isochronous phase locking
+ * (M0 measurement: link loss 5~8% in phase-aligned interval).
+ * Jitter is harmless since host resamples to common 100Hz grid.
+ */
 static void schedule_next(void)
 {
     uint32_t period = 1000000UL / s_rate;
@@ -39,8 +41,9 @@ static void schedule_next(void)
     esp_timer_start_once(s_tick, (uint64_t)((int64_t)period + jit));
 }
 
-/* 브로드캐스트는 ACK가 없어 send 콜백 status가 무의미 — esp_now_send 반환만 계수.
- * 손실 계측의 기준은 어디까지나 RX측 seq 갭. */
+/* Broadcast has no ACK, so send callback status is meaningless — only esp_now_send return is counted.
+ * The basis for loss measurement is always RX-side seq gaps.
+ */
 static void tick_cb(void *arg)
 {
     if (!s_running)
@@ -115,7 +118,7 @@ static void handle(const char *line)
         if (s_running)
             esp_timer_stop(s_tick);
         s_rate = (uint32_t)rate;
-        s_seq = s_sent_ok = s_sent_fail = 0;  /* START마다 seq 리셋 — 호스트는 reset 이벤트로 처리 */
+        s_seq = s_sent_ok = s_sent_fail = 0;
         s_running = true;
         schedule_next();
         csil_reply("OK START rate=%d\n", rate);
@@ -123,7 +126,7 @@ static void handle(const char *line)
     }
     if (!strcmp(line, "STOP")) {
         if (s_running) {
-            s_running = false;   /* 콜백 재예약 차단 후 정지 */
+            s_running = false;
             esp_timer_stop(s_tick);
         }
         csil_reply("OK STOP sent=%" PRIu32 " fail=%" PRIu32 "\n", s_sent_ok, s_sent_fail);
@@ -165,5 +168,5 @@ void app_main(void)
     const esp_timer_create_args_t targs = {.callback = tick_cb, .name = "txbeacon"};
     ESP_ERROR_CHECK(esp_timer_create(&targs, &s_tick));
 
-    csil_console_run(handle); /* 복귀하지 않음 */
+    csil_console_run(handle);
 }

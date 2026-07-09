@@ -1,9 +1,7 @@
-"""PCK@α — 픽셀 공간, GT c<0.3 관절 제외, lying 단축보정 분모.
-
-평가 입력은 presence=1 행만(호출측 필터). 좌표는 정규화 — 내부에서 W·H 픽셀 환산.
-lying 판정 = 코어(어깨2·골반2·무릎2·nose) bbox h/w < 0.8 (유효 코어 ≥3),
-분모 = max(토르소 대각, κ·코어 bbox 대각). κ는 train 직립(h/w≥1.2)에서 캘리브.
-"""
+# PCK@alpha — pixel space, excludes GT c<0.3 joints, lying aspect-ratio-corrected denominator.
+# Evaluation input is presence=1 rows only (caller filters). Coordinates are normalized — internal W·H pixel conversion.
+# Lying judgment = core (shoulders2·pelvis2·knees2·nose) bbox h/w < 0.8 (valid core >=3),
+# denominator = max(torso diagonal, kappa·core bbox diagonal). kappa calibrated from train upright (h/w>=1.2).
 import numpy as np
 
 NOSE, RSHO, LSHO, RHIP, LHIP, RKNEE, LKNEE = 0, 2, 5, 8, 11, 9, 12
@@ -13,7 +11,7 @@ LYING_AR, UPRIGHT_AR = 0.8, 1.2
 
 
 def frame_geometry(gt_px, c):
-    """단일 프레임 → (torso, core_diag, aspect, n_core). 무효 = nan."""
+    # Single frame -> (torso, core_diag, aspect, n_core). Invalid = nan.
     torso = np.nan
     if c[LSHO] >= C_MIN and c[RHIP] >= C_MIN:
         torso = float(np.linalg.norm(gt_px[LSHO] - gt_px[RHIP]))
@@ -27,7 +25,7 @@ def frame_geometry(gt_px, c):
 
 
 def calibrate_kappa(gt_xy, gt_c, WH):
-    """직립 프레임에서 median(토르소/코어 대각) — train GT로 산출."""
+    # Median(torso/core diagonal) from upright frames — computed from train GT.
     px = gt_xy * WH[:, None, :]
     ratios = []
     for f in range(len(px)):
@@ -35,22 +33,21 @@ def calibrate_kappa(gt_xy, gt_c, WH):
         if n >= 3 and np.isfinite(torso) and np.isfinite(ar) and ar >= UPRIGHT_AR and core > 0:
             ratios.append(torso / core)
     if not ratios:
-        raise ValueError("직립 프레임 없음 — κ 캘리브 불가")
+        # No upright frames — cannot calibrate kappa
+        raise ValueError("no upright frames — kappa calibration failed")
     return float(np.median(ratios))
 
 
 def evaluate(pred_xy, gt_xy, gt_c, WH, *, kappa, alphas=(0.2, 0.5), stype=None,
              lying_override=None):
-    """정규화 좌표 (F,18,2)·c (F,18)·WH (F,2) → 리포트 dict (JSON 직렬화 가능).
-
-    집계는 (frame,joint) 풀링 평균 — 유효 관절 많은 프레임이 가중됨(per-frame 매크로 아님).
-    mpjpe_norm은 16:9 비등방 공간 평균 — 보조 지표(px가 정본). per_joint는 게이트 α=0.2 고정.
-    """
+    # Normalized coordinates (F,18,2)·c (F,18)·WH (F,2) -> report dict (JSON serializable).
+    # Aggregation is (frame,joint) pool mean — frames with more valid joints get weighted (not per-frame macro).
+    # mpjpe_norm is 16:9 anisotropic space mean — auxiliary metric (px is authoritative). per_joint uses fixed gate alpha=0.2.
     F = len(gt_xy)
     if stype is not None and len(stype) != F:
-        raise ValueError(f"stype 길이 {len(stype)} ≠ F {F}")
+        raise ValueError(f"stype length {len(stype)} != F {F}")
     if lying_override is not None and len(lying_override) != F:
-        raise ValueError(f"lying_override 길이 {len(lying_override)} ≠ F {F}")
+        raise ValueError(f"lying_override length {len(lying_override)} != F {F}")
     pred_px = pred_xy * WH[:, None, :]
     gt_px = gt_xy * WH[:, None, :]
     dist = np.linalg.norm(pred_px - gt_px, axis=2)            # (F,18)
@@ -67,7 +64,7 @@ def evaluate(pred_xy, gt_xy, gt_c, WH, *, kappa, alphas=(0.2, 0.5), stype=None,
         else:
             den[f] = torso
     ok_f = np.isfinite(den) & (den > 0) & valid_j.any(axis=1)
-    use = valid_j & ok_f[:, None]                              # (F,18) 평가 대상 관절
+    use = valid_j & ok_f[:, None]                              # (F,18) evaluation target joints
 
     def _pck(rows):
         m = use & rows[:, None]

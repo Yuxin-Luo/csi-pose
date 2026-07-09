@@ -30,7 +30,7 @@ void csil_console_run(csil_cmd_handler_t handler)
         if (n < sizeof line - 1)
             line[n++] = (char)ch;
         else
-            n = 0; /* 과대 라인 폐기 */
+            n = 0; /* Discard oversized line */
     }
 }
 

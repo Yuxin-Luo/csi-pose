@@ -1,7 +1,7 @@
-"""정렬 1·2단계 — 에포크 분리, ≤2연속 갭 보간(+마스크), 100Hz 그리드, 윈도 절단.
+"""Alignment stages 1 & 2 -- epoch separation, <=2 consecutive gap interpolation (+mask), 100Hz grid, window trimming.
 
-순서 고정: 리샘플 → 정규화. 여기서는 리샘플까지만 — 정규화는 학습 단계.
-그리드/샘플의 시각은 전부 클록핏 보정 시각(t_fit) 기준.
+Order is fixed: resample -> normalize. This module only does resampling -- normalization is in training.
+All grid/sample times are based on clock-fit corrected time (t_fit).
 """
 from dataclasses import dataclass, field
 
@@ -9,27 +9,28 @@ import numpy as np
 
 
 def amplitude(iq):
-    """iq [n,56,2] int8 → 진폭 [n,56] float32."""
+    """iq [n,56,2] int8 -> amplitude [n,56] float32."""
     f = iq.astype(np.float32)
     return np.sqrt(f[..., 0] ** 2 + f[..., 1] ** 2)
 
 
 _PHASE_K = np.arange(56, dtype=np.float64)
-_PHASE_A = np.stack([_PHASE_K, np.ones(56)], axis=1)          # [56,2] = (기울기, 오프셋)
+_PHASE_A = np.stack([_PHASE_K, np.ones(56)], axis=1)          # [56,2] = (slope, offset)
 _PHASE_P = np.eye(56) - _PHASE_A @ np.linalg.inv(_PHASE_A.T @ _PHASE_A) @ _PHASE_A.T
 
 
 def sanitized_phase(iq):
-    """iq [n,56,2] → 부반송파 축 unwrap + LS 선형(STO/CFO) 제거 잔차 [n,56] f32 (§6.3).
+    """iq [n,56,2] -> subcarrier axis unwrap + LS linear (STO/CFO) removal residual [n,56] f32 (Section 6.3).
 
-    I/Q 열 순서가 뒤집혀 있어도 잔차는 전 데이터 일관 변환(반사+상수) 차이뿐 — 학습 중립."""
+    Even if I/Q column order is reversed, residuals differ only by consistent transformation
+    (reflection + constant) -- neutral for learning."""
     f = iq.astype(np.float64)
     phi = np.arctan2(f[..., 1], f[..., 0])
     return (np.unwrap(phi, axis=1) @ _PHASE_P).astype(np.float32)
 
 
 def split_epochs(seq, boot_id):
-    """seq 후퇴(TX 재시작) 또는 boot_id 변화(RX 리부트) 경계로 슬라이스 분리."""
+    """Split by seq rollback (TX restart) or boot_id change (RX reboot) boundaries."""
     seq = np.asarray(seq, np.int64)
     boot = np.asarray(boot_id, np.int64)
     cut = np.flatnonzero((np.diff(seq) <= 0) | (np.diff(boot) != 0)) + 1
@@ -38,10 +39,10 @@ def split_epochs(seq, boot_id):
 
 
 def fill_gaps(t_ns, seq, amp, *, max_run=2):
-    """단일 에포크 내 seq 결손 ≤max_run 연속을 선형 보간.
+    """Interpolate seq losses <=max_run consecutive within a single epoch linearly.
 
-    반환: (t2, amp2, interp_mask, breaks) — breaks는 보간하지 않은 (t_left, t_right)
-    구간 목록 (그리드 마스크용, §5.2-1 '초과 구간 폐기')."""
+    Returns: (t2, amp2, interp_mask, breaks) -- breaks is list of uninterpolated (t_left, t_right)
+    intervals (for grid mask, Section 5.2-1 'excess interval discard')."""
     t = np.asarray(t_ns, np.int64)
     seq = np.asarray(seq, np.int64)
     d = np.diff(seq)
@@ -71,7 +72,7 @@ def fill_gaps(t_ns, seq, amp, *, max_run=2):
 
 @dataclass
 class LinkStream:
-    """갭 채움·에포크 머지가 끝난 링크 스트림 (t 오름차순, breaks 정렬)."""
+    """Link stream after gap fill and epoch merge (t ascending, breaks sorted)."""
     t: np.ndarray                  # i64 ns (t_fit)
     amp: np.ndarray                # f32 [n,56]
     interp: np.ndarray             # bool [n]
@@ -79,7 +80,7 @@ class LinkStream:
 
 
 def grid_bounds(streams, *, step_ns=10_000_000):
-    """전 링크 공통 가용 구간 → (g0, g1) — step 정렬, g0=올림, g1=내림."""
+    """Common available interval across all links -> (g0, g1) -- step-aligned, g0=ceil, g1=floor."""
     lo = max(int(s.t[0]) for s in streams)
     hi = min(int(s.t[-1]) for s in streams)
     g0 = -(-lo // step_ns) * step_ns
@@ -88,12 +89,11 @@ def grid_bounds(streams, *, step_ns=10_000_000):
 
 
 def grid_block(s: LinkStream, tb):
-    """그리드 시각 블록 tb(i64)에서 링크 진폭 선형 보간 + 마스크.
+    """Linear interpolate link amplitude at grid time block tb (i64) + mask.
 
-    마스크 True: 스트림 범위 밖 / break 구간 내 / 브래킷 표본이 보간 유래.
-    전제: s.t 표본 n≥2. breaks는 서로소(disjoint)·시작 시각 오름차순 —
-    searchsorted 판정이 시작이 가장 가까운 break 하나만 검사하므로
-    중첩/포개진 break는 조용히 누락된다 (현 호출자 fill_gaps가 보장)."""
+    Mask True: outside stream range / inside break interval / interpolated samples.
+    Requires s.t samples n>=2. breaks are disjoint and sorted by start time ascending --
+    nested/overlapping breaks are silently dropped (guaranteed by current caller fill_gaps)."""
     tb = np.asarray(tb, np.int64)
     n = len(s.t)
     idx = np.clip(np.searchsorted(s.t, tb), 1, n - 1)
@@ -110,11 +110,11 @@ def grid_block(s: LinkStream, tb):
     return amp, mask
 
 
-WIN = 5  # 5패킷 × 56SC = 280채널
+WIN = 5  # 5 packets x 56SC = 280 channels
 
 
 def window_indices(g0, step, G, anchors, *, win=WIN):
-    """앵커 t_f → 윈도 시작 그리드 행. [t_f−win·step, t_f) ⊂ 그리드인 것만 오케이 ~ ."""
+    """Anchor t_f -> window start grid rows. OK only if [t_f - win*step, t_f) is subset of grid."""
     a = np.asarray(anchors, np.int64)
     off = a - g0
     q, r = np.divmod(off, step)
@@ -125,7 +125,7 @@ def window_indices(g0, step, G, anchors, *, win=WIN):
 
 
 def cut_windows(amp, mask, starts, *, win=WIN):
-    """그리드 → X[N,280,3,3] f16 + valid[N] (링크별 마스크 ≥2/5 → False)."""
+    """Grid -> X[N,280,3,3] f16 + valid[N] (link-wise mask >=2/5 -> False)."""
     starts = np.asarray(starts, np.int64)
     idx = starts[:, None] + np.arange(win)[None, :]          # [N,5]
     blk = amp[idx]                                           # [N,5,56,3,3]

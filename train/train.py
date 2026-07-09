@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """train/ CLI — fit | eval | baselines.
 
-예) python3 train/train.py fit --config configs/train.yaml --loss-mode pam_full
+Example: python3 train/train.py fit --config configs/train.yaml --loss-mode pam_full
     python3 train/train.py baselines --config configs/train.yaml
     python3 train/train.py eval --ckpt runs/run0/best.pt --config configs/train.yaml
 """
@@ -25,8 +25,9 @@ def _device(args):
 
 def cmd_fit(args):
     if args.vector_head and args.loss_mode != "diag_only":
-        raise SystemExit("--vector-head는 --loss-mode diag_only 전용 (§8.3-3안) — "
-                         "loss.py도 막지만 수 GB 적재 후라 조기 차단")
+        # --vector-head is only for --loss-mode diag_only (Section 8.3-3 variant) -- loss.py blocks it too but early rejection saves GB loading
+        raise SystemExit("--vector-head is only for --loss-mode diag_only (§8.3-3 variant) -- "
+                         "loss.py also blocks it but early rejection saves GB loading")
     feats = tuple(f for f, on in (("phase", args.phase), ("rssi", args.rssi)) if on)
     man = data.load_manifest(args.config)
     if args.epochs:
@@ -43,10 +44,11 @@ def cmd_fit(args):
 
 def cmd_eval(args):
     if not Path(args.ckpt).exists():
-        raise SystemExit(f"체크포인트 없음: {args.ckpt}")
+        # Checkpoint not found
+        raise SystemExit(f"Checkpoint not found: {args.ckpt}")
     device = _device(args)
     model, ck = fit.load_ckpt(args.ckpt, device=device)
-    feats = tuple(ck["config"].get("features", []))        # 구형 ckpt = amp 전용 해석
+    feats = tuple(ck["config"].get("features", []))        # Old-format ckpt = amp-only interpretation
     man = data.load_manifest(args.config)
     rows = data.load_role(man, args.split, feats)
     mu_p = ck["mu_phase"].cpu().numpy() if "mu_phase" in ck else None
@@ -61,7 +63,7 @@ def cmd_eval(args):
     out = Path(args.ckpt).parent / f"report-{args.split}.json"
     out.write_text(json.dumps(rep, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps(rep, ensure_ascii=False, indent=1))
-    print(f"저장: {out}")
+    print(f"Saved: {out}")
 
 
 def cmd_baselines(args):
@@ -70,8 +72,8 @@ def cmd_baselines(args):
     sp = data.build_splits(man)
     tr, va = sp["train"], sp["val"]
     if not tr.presence.any() or not va.presence.any():
-        raise SystemExit(f"presence=1 행 없음 (train {int(tr.presence.sum())}, "
-                         f"val {int(va.presence.sum())}) — 베이스라인 평가 불가")
+        raise SystemExit(f"presence=1 rows missing (train {int(tr.presence.sum())}, "
+                         f"val {int(va.presence.sum())}) -- cannot evaluate baselines")
     Xtr = tr.X[tr.presence]
     gt_tr, c_tr = data.diag_pose(tr.Y[tr.presence])
     mq = va.presence
@@ -97,25 +99,25 @@ def cmd_baselines(args):
                                         encoding="utf-8")
     print(json.dumps({n: rep[n]["pck"] for n in preds} |
                      {"gate_baseline_pck02": rep["gate_baseline_pck02"],
-                      "주의": "oracle_centroid는 진단 전용 — 게이트 제외(설계 §9)"},
+                      "note": "oracle_centroid is diagnostic only -- excluded from gate (design §9)"},
                      ensure_ascii=False, indent=1))
-    print(f"저장: {out / 'baselines.json'}")
+    print(f"Saved: {out / 'baselines.json'}")
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="WiSPPN-ESP 학습/평가 (M2)")
+    ap = argparse.ArgumentParser(description="WiSPPN-ESP training/evaluation (M2)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     f = sub.add_parser("fit")
     f.add_argument("--config", default="configs/train.yaml")
     f.add_argument("--loss-mode", choices=MODES, default="pam_full")
     f.add_argument("--vector-head", action="store_true")
-    f.add_argument("--rssi", action="store_true", help="RSSI 재스케일(§6.2 정석) — M2.5")
-    f.add_argument("--phase", action="store_true", help="sanitized phase 결합 560ch — M2.5")
+    f.add_argument("--rssi", action="store_true", help="RSSI rescaling (§6.2 canonical) -- M2.5")
+    f.add_argument("--phase", action="store_true", help="sanitized phase combine 560ch -- M2.5")
     f.add_argument("--augment", action="store_true",
-                   help="GPU 텐서 증강 4종 (docs/research-20260612-low-data-techniques.md)")
+                   help="GPU tensor augmentation 4 types (docs/research-20260612-low-data-techniques.md)")
     f.add_argument("--name", default=None)
     f.add_argument("--out-root", default="runs")
-    f.add_argument("--epochs", type=int, default=None, help="hyper.epochs 오버라이드")
+    f.add_argument("--epochs", type=int, default=None, help="hyper.epochs override")
     f.add_argument("--compile", action="store_true")
     f.add_argument("--device", default=None)
     f.set_defaults(fn=cmd_fit)

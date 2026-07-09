@@ -1,5 +1,5 @@
-"""M1.5 프로브 — 세그먼트 조인·태스크 필터·프로브 학습·게이트 판정.
-segments.json에서만(teacher·카메라·보정 비의존). 게이트 = max(linear, mlp) ≥ 임계."""
+"""M1.5 probe — segment join, task filter, probe learning, and gate judgment.
+Only from segments.json (teacher, camera, calibration independent). Gate = max(linear, mlp) >= threshold."""
 import json
 from pathlib import Path
 
@@ -16,32 +16,32 @@ _POSTURE_CLS = {"stand": 0, "sit": 1, "lie": 2}
 def load_segments(path):
     p = Path(path)
     if not p.exists():
-        raise SystemExit(f"segments 파일 없음: {path}")
+        raise SystemExit(f"segments file not found: {path}")
     d = json.loads(p.read_text(encoding="utf-8"))
     missing = {"session", "capture", "plan_version", "segments", "aborted"} - d.keys()
     if missing:
-        raise SystemExit(f"segments 키 누락 {sorted(missing)}: {path}")
+        raise SystemExit(f"segments keys missing {sorted(missing)}: {path}")
     if d["aborted"]:
-        raise SystemExit(f"aborted 캡처 — 재캡처 필요: {path}")
+        raise SystemExit(f"Aborted capture — need recapture: {path}")
     return d
 
 
 def check_pair(seg_tr, seg_ev):
     if seg_tr["plan_version"] != seg_ev["plan_version"]:
-        raise SystemExit("plan_version 불일치: "
+        raise SystemExit("plan_version mismatch: "
                          f"{seg_tr['plan_version']} vs {seg_ev['plan_version']}")
     if seg_tr["session"] == seg_ev["session"]:
-        raise SystemExit(f"train/eval 세션 동일({seg_tr['session']}) — "
-                         "교차-세션 게이트 무효 (인자 복붙 실수 의심)")
+        raise SystemExit(f"train/eval sessions are the same ({seg_tr['session']}) — "
+                         "cross-session gate is invalid (suspect copy-paste error)")
 
 
 def gate_pass(acc, thr):
-    """§13 게이트 — 경계 포함(≥)."""
+    """Section 13 gate — boundary inclusive (>=)."""
     return bool(acc >= thr)
 
 
 def _seg_label(seg, task):
-    """세그먼트 → 태스크 클래스 (해당 없음 = None). 스펙 §태스크 필터 표."""
+    """Segment -> task class (None if not applicable). Spec Section task filter table."""
     if task == "pos9":
         return seg["pos"] - 1 if seg["posture"] == "stand" else None
     if task == "posture3":
@@ -52,11 +52,11 @@ def _seg_label(seg, task):
         if seg["posture"] == "lie":
             return 1
         return 0 if seg["empty"] else None
-    raise SystemExit(f"미정의 태스크 {task}")
+    raise SystemExit(f"Undefined task {task}")
 
 
 def task_rows(t_ns, valid, segdoc, task, trim_ns):
-    """윈도 t_ns → (행 인덱스, 클래스). 조인 = [start+trim, end−trim) ∧ valid."""
+    """Window t_ns -> (row indices, classes). Join = [start+trim, end-trim) AND valid."""
     t = t_ns.astype(np.int64)
     idx_parts, y_parts = [], []
     for seg in segdoc["segments"]:
@@ -69,25 +69,25 @@ def task_rows(t_ns, valid, segdoc, task, trim_ns):
         y_parts.append(np.full(int(m.sum()), c, np.int64))
     total = sum(len(i) for i in idx_parts)
     if total == 0:
-        raise SystemExit(f"{task}: 조인 0행 — 시계/세션 불일치 또는 트림 과대 의심")
+        raise SystemExit(f"{task}: 0 rows joined — clock/session mismatch or excessive trim suspected")
     y = np.concatenate(y_parts)
     missing = sorted(set(range(N_CLS[task])) - set(np.unique(y).tolist()))
     if missing:
-        raise SystemExit(f"{task}: 클래스 {missing} 조인 0행 — 세그먼트 로그/트림 확인")
+        raise SystemExit(f"{task}: class {missing} has 0 rows — check segment log/trim")
     idx = np.concatenate(idx_parts)
     if len(np.unique(idx)) != len(idx):
-        raise SystemExit(f"{task}: 세그먼트 시간 겹침 — 행 {len(idx) - len(np.unique(idx))}개 "
-                         "이중 조인 (segments.json 편집/로거 확인)")
+        raise SystemExit(f"{task}: segment time overlap — {len(idx) - len(np.unique(idx))} duplicate joins "
+                         "(check segments.json editing/logger)")
     return idx, y
 
 
 def _flatten(X):
-    """(N,280,3,3) f16 → §6.2 l2_normalize 후 (N,2520) f32 — 세션 간 통계 결합 없음."""
+    """(N,280,3,3) f16 -> Section 6.2 l2_normalize then (N,2520) f32 — no cross-session stats."""
     return l2_normalize(X).reshape(len(X), -1)
 
 
 def _fit_one(kind, Xtr, ytr, n_cls, *, seed, epochs, lr=1e-3):
-    """linear | mlp 프로브 — CPU full-batch Adam. 과적합 무해(평가는 교차-세션)."""
+    """linear | mlp probe — CPU full-batch Adam. Overfitting is harmless (cross-session evaluation)."""
     import torch
     from torch import nn
     torch.manual_seed(seed)
@@ -123,24 +123,24 @@ def _confusion(pred, y, n_cls):
 
 def _load_h5(path, *, with_phase=False):
     if not Path(path).exists():
-        raise SystemExit(f"세션 h5 없음: {path} — build_samples.py 실행 여부 확인")
+        raise SystemExit(f"Session h5 not found: {path} — check if build_samples.py was run")
     with h5py.File(path, "r") as h:
         X = h["samples/X"][...]
         XP = None
         if with_phase:
             if "samples/X_phase" not in h:
-                raise SystemExit(f"{path}: samples/X_phase 없음 — "
-                                 "M2.5 빌드(build_samples --force) 필요")
+                raise SystemExit(f"{path}: samples/X_phase not found — "
+                                 "need M2.5 build (build_samples --force)")
             XP = h["samples/X_phase"][...]
         t_ns = h["samples/t_ns"][...]
         valid = h["samples/valid"][...].astype(bool)
         n_video = len(h["video/t_ns"]) if "video/t_ns" in h else 0
     if valid.mean() < 0.5:
-        print(f"경고: {path} valid {valid.mean():.1%} <50% — 손실 점검 권장")
+        print(f"Warning: {path} valid {valid.mean():.1%} <50% — recommend checking loss")
     if n_video:
-        print(f"경고: {path} video 앵커 존재 — m15 규약은 --no-mqtt 카메라(동작은 정상)")
+        print(f"Warning: {path} has video anchors — m15 convention is --no-mqtt camera (behavior is normal)")
     F = _flatten(X)
-    if XP is not None:                       # phase는 L2 없이 결합(잔차 유계 — 스펙 §4)
+    if XP is not None:                       # phase is combined without L2 (residual bounded — spec Section 4)
         F = np.concatenate([F, XP.astype(np.float32).reshape(len(XP), -1)], axis=1)
     return F, t_ns, valid
 
@@ -150,12 +150,12 @@ def _check_overlap(t_ns, segdoc, name):
     lo = min(s["t_start_ns"] for s in segdoc["segments"])
     hi = max(s["t_end_ns"] for s in segdoc["segments"])
     if not ((t >= lo) & (t < hi)).any():
-        raise SystemExit(f"{name}: t_ns·세그먼트 교집합 없음 — 시계/세션 불일치 의심")
+        raise SystemExit(f"{name}: t_ns has no intersection with segments — clock/session mismatch suspected")
 
 
 def run_probe(train_h5, train_seg, eval_h5, eval_seg, *,
               trim_s=2.0, seed=7, epochs=200, with_phase=False):
-    """교차-세션 게이트 — 캡처1 학습 → 캡처2 평가. verdict dict 반환."""
+    """Cross-session gate — learn on capture1, evaluate on capture2. Returns verdict dict."""
     seg_tr, seg_ev = load_segments(train_seg), load_segments(eval_seg)
     check_pair(seg_tr, seg_ev)
     Xtr, t_tr, v_tr = _load_h5(train_h5, with_phase=with_phase)
@@ -174,7 +174,7 @@ def run_probe(train_h5, train_seg, eval_h5, eval_seg, *,
             m = _fit_one(kind, A, ytr, N_CLS[task], seed=seed, epochs=epochs)
             accs[kind], preds[kind] = _acc(m, B, yev)
         gate_kind = max(accs, key=accs.get)
-        # 동일-세션 참고치(§13 "참고용 상한" — 게이트 아님): 캡처1 내부 80/20
+        # Same-session reference (Section 13 "reference upper bound" — not a gate): capture1 internal 80/20
         perm = rng.permutation(len(A))
         cut = max(1, int(len(A) * 0.8))
         ref = {}

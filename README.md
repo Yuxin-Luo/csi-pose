@@ -317,6 +317,8 @@ Naming convention: `csi_*` directories (`csi_host/`, `csi_pipe/`, `csi_train/`,
 …) are library modules; the sibling top-level scripts (`bridge.py`, `train.py`,
 …) are CLI wrappers.
 
+<!-- Korean translation: 코드 주석과 CLI 도움말 문자열은 한국어로 작성되어 있습니다. "설계 §N" / -->
+<!-- "스펙 …" 주석은 내부 설계 문서의 섹션 번호를 참조합니다. -->
 Note: code comments and CLI help strings are written in Korean. "설계 §N" /
 "스펙 …" in comments refer to section numbers of an internal design document.
 

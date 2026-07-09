@@ -1,17 +1,17 @@
-""" M1.5 미니캡처 프로토콜 — 플랜·세그먼트 상태기계.
+"""M1.5 minicapture protocol — plan/segment state machine.
 
-stdlib 전용 — 윈도우 운영 콘솔(tools/m15_protocol.py)에서 구동, numpy/h5py 비의존.
-격자 1~9 = TX측→RX측 행우선, 매트 = 5번 칸 고정. 캡처2 순회는 고정 셔플
-(캡처 내 시간 드리프트가 위치 신호로 가장되는 leak 차단)."""
+Stdlib only — runs on Windows console (tools/m15_protocol.py), no numpy/h5py dependency.
+Grid 1-9 = TX-side→RX-side row-major, mat position 5 fixed. Capture-2 traversal uses a fixed
+shuffle (blocks leak where time drift within a capture masquerades as positional signal)."""
 
 PLAN_VERSION = "m15-v1"
 ORDERS = {1: (1, 2, 3, 4, 5, 6, 7, 8, 9), 2: (5, 1, 8, 3, 7, 2, 9, 4, 6)}
 
 
 def plan_segments(capture):
-    """캡처 번호(1|2) → 13세그먼트 [{idx,pos,posture,empty,hint_s}]."""
+    """capture number (1|2) → 13 segments [{idx,pos,posture,empty,hint_s}]."""
     if capture not in ORDERS:
-        raise SystemExit(f"capture는 1|2 — 입력 {capture}")
+        raise SystemExit(f"capture must be 1|2 — got {capture}")
     segs = [{"pos": None, "posture": None, "empty": True, "hint_s": 60}]
     segs += [{"pos": p, "posture": "stand", "empty": False, "hint_s": 40}
              for p in ORDERS[capture]]
@@ -22,22 +22,25 @@ def plan_segments(capture):
 
 
 class M15Session:
-    """경계 키 이벤트 → 세그먼트 확정. mark 토글: 이동→정착(시작)/정착→이동(끝).
+    """Boundary key events → segment finalization. mark toggle: moving→settled (start) / settled→moving (end).
 
-    undo = 직전 경계 1개 취소(반복 가능): 시작 취소 → 이동 복귀, 끝 취소 → 재개.
-    done이어도 undo로 마지막 경계 되돌리기 가능(마지막 끝을 너무 빨리 누른 실수 복구).
-    abort 후에는 mark/undo 불가(종료 상태) — 확정 경계 보존.
-    시각은 호출측 주입(time.time_ns) — 비증가는 ValueError(시계 이상 방어, CLI가
-    잡아 무시). result는 완주·중단 상태에서만 — 미확정(열린) 세그먼트는 버린다."""
+    undo = cancel last boundary 1 (repeatable): cancel start → return to moving,
+    cancel end → resume. Even if done, undo can revert the last boundary (mistake
+    of pressing end too quickly). After abort, mark/undo are not allowed (terminal state) —
+    finalized boundaries are preserved.
+    Timestamps are injected by caller (time.time_ns) — non-increasing raises ValueError
+    (clock anomaly defense, CLI catches and ignores). result() is only available in
+    completed/aborted state — unfinished (open) segments are discarded.
+    """
 
     def __init__(self, capture, session):
         self.capture = capture
         self.session = session
         self.plan = plan_segments(capture)
-        self.k = 0                # 현재(미확정) 세그먼트 인덱스
-        self.settled = False      # True = 시작 경계 찍힘(진행 중)
+        self.k = 0                # current (unfinalized) segment index
+        self.settled = False      # True = start boundary recorded (in progress)
         self._open_t = None
-        self.bounds = []          # 확정 [(t_start, t_end)] — plan[i] 인덱스 대응
+        self.bounds = []          # finalized [(t_start, t_end)] — corresponds to plan[i] index
         self.aborted = False
 
     @property
@@ -54,11 +57,11 @@ class M15Session:
 
     def mark(self, t_ns):
         if self.aborted:
-            raise ValueError("중단됨 — 추가 조작 불가")
+            raise ValueError("aborted — no further operations allowed")
         if self.done:
-            raise ValueError("플랜 종료 — 추가 mark 불가")
+            raise ValueError("plan ended — further mark not allowed")
         if t_ns <= self._last_t():
-            raise ValueError(f"시각 역행: {t_ns} ≤ {self._last_t()}")
+            raise ValueError(f"time regression: {t_ns} ≤ {self._last_t()}")
         if not self.settled:
             self._open_t = t_ns
             self.settled = True
@@ -71,7 +74,7 @@ class M15Session:
 
     def undo(self):
         if self.aborted:
-            raise ValueError("중단됨 — 추가 조작 불가")
+            raise ValueError("aborted — no further operations allowed")
         if self.settled:
             self.settled = False
             self._open_t = None
@@ -91,7 +94,7 @@ class M15Session:
 
     def result(self):
         if not (self.done or self.aborted):
-            raise ValueError("미완료·미중단 — result 불가 (done 또는 abort 후 호출)")
+            raise ValueError("not completed or aborted — result unavailable (call after done or abort)")
         segments = []
         for i, (s, e) in enumerate(self.bounds):
             p = self.plan[i]

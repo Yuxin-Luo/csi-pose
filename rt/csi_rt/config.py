@@ -1,4 +1,4 @@
-"""rt.yaml 로드+검증 — 키 누락·파일 부재 = SystemExit(fail-loud, 침묵 폴백 금지)."""
+"""rt.yaml load+validation — missing keys/file absent = SystemExit (fail-loud, no silent fallback)."""
 from pathlib import Path
 
 import yaml
@@ -13,13 +13,13 @@ _MQTT = ("host", "port")
 def load_rt_config(path):
     p = Path(path)
     if not p.exists():
-        raise SystemExit(f"rt 설정 없음: {p} — configs/rt.yaml 경로를 --config로 지정")
+        raise SystemExit(f"rt config not found: {p} — specify --config with configs/rt.yaml path")
     cfg = yaml.safe_load(p.read_text(encoding="utf-8"))
     if not isinstance(cfg, dict):
-        raise SystemExit(f"rt 설정 형식 오류(최상위 매핑 아님 또는 빈 파일): {p}")
+        raise SystemExit(f"rt config format error (top-level mapping absent or empty): {p}")
     for sect, keys in (("", _TOP), ("fall", _FALL), ("mqtt", _MQTT)):
         d = cfg if not sect else cfg.get(sect) or {}
         for k in keys:
             if k not in d:
-                raise SystemExit(f"rt 설정 키 누락: {sect + '.' if sect else ''}{k} ({p})")
+                raise SystemExit(f"rt config key missing: {sect + '.' if sect else ''}{k} ({p})")
     return cfg

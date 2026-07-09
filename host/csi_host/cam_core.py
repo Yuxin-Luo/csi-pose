@@ -1,6 +1,6 @@
-"""CamCore — 프레임 시각 → cam/meta 발행 (송신측; 영상 저장은 CLI 담당).
-
-sink 주입(bridge NullSink/MqttSink 덕타입)으로 cv2·MQTT 없이 테스트."""
+# """CamCore — frame timestamp → cam/meta publish (sender side; video storage handled by CLI).
+# sink injection (bridge NullSink/MqttSink duck typing) enables testing without cv2·MQTT."""
+# Translation: CamCore — frame timestamp → cam/meta publish (sender side; video storage handled by CLI). sink injection (bridge NullSink/MqttSink duck typing) enables testing without cv2·MQTT.
 try:
     import msgpack
 except ImportError:
@@ -8,72 +8,77 @@ except ImportError:
 
 
 class CamCore:
-    """웹캠 프레임 시각을 cam/meta 토픽으로 발행하는 코어 로직.
+    """Core logic for publishing webcam frame timestamps to cam/meta topic.
 
     Parameters
     ----------
     sink:
-        ``publish(topic, payload)`` 덕타입. NullSink 또는 MqttSink.
+        ``publish(topic, payload)`` duck type. NullSink or MqttSink.
     on_event:
-        선택 콜백 ``(kind: str, val) -> None`` — 확장용, 현재 미사용.
+        Optional callback ``(kind: str, val) -> None`` — for extension, currently unused.
     """
+    # """Core logic for publishing webcam frame timestamps to cam/meta topic.
+    # Parameters: sink (publish duck type), on_event (optional callback).
 
     def __init__(self, sink, *, on_event=None):
         if msgpack is None:
-            raise RuntimeError("cam_capture는 msgpack 필수 — pip install msgpack")
+            raise RuntimeError("cam_capture requires msgpack -- pip install msgpack")
         self._sink = sink
         self._on_event = on_event
-        self._frames = 0        # 성공 handle_frame 횟수
-        self._drops = 0         # 누적 드롭 수
-        self._frame_idx = 0     # 다음에 발행할 frame_idx (단조 증가)
-        self._consec_drops = 0  # 연속 드롭 카운터 — handle_frame 성공 시 0 리셋
+        self._frames = 0        # Successful handle_frame count
+        self._drops = 0         # Cumulative drop count
+        self._frame_idx = 0     # Next frame_idx to publish (monotonically increasing)
+        self._consec_drops = 0  # Consecutive drop counter — reset to 0 on successful handle_frame
 
     # ------------------------------------------------------------------
-    # 공개 인터페이스
+    # Public interface
     # ------------------------------------------------------------------
 
     def handle_frame(self, t_ns) -> int:
-        """프레임 grab 시각을 cam/meta로 발행하고 사용한 frame_idx를 반환.
+        """Publish frame grab timestamp to cam/meta and return the assigned frame_idx.
 
         Parameters
         ----------
         t_ns:
-            grab 직후 호스트 시계 (``time.time_ns()``).
+            Host clock immediately after grab (``time.time_ns()``).
 
         Returns
         -------
         int
-            이번 프레임에 할당된 frame_idx (0부터 단조 증가).
+            frame_idx assigned to this frame (0, monotonically increasing).
         """
+        # """Publish frame grab timestamp to cam/meta and return the assigned frame_idx."""
         idx = self._frame_idx
         payload = msgpack.packb({"frame_idx": idx, "t_ns": int(t_ns)})
         self._sink.publish("cam/meta", payload)
         self._frames += 1
         self._frame_idx += 1
-        self._consec_drops = 0  # 성공 → 연속 드롭 리셋
+        self._consec_drops = 0  # Success → reset consecutive drops
         return idx
 
     def note_drop(self) -> int:
-        """프레임 read 실패를 기록하고 현재 연속 드롭 횟수를 반환.
+        """Record frame read failure and return current consecutive drop count.
 
         Returns
         -------
         int
-            현재까지의 연속 드롭 수 (handle_frame 성공 시 리셋).
-            CLI가 이 값으로 임계 초과 여부를 판단한다.
+            Current consecutive drop count (reset on successful handle_frame).
+            CLI uses this value to determine if threshold exceeded.
         """
+        # """Record frame read failure and return current consecutive drop count."""
         self._drops += 1
         self._consec_drops += 1
         return self._consec_drops
 
     def status(self) -> dict:
-        """현재 집계 상태를 반환.
+        """Return current aggregated status.
 
         Returns
         -------
         dict
             ``{"frames": int, "drops": int, "frame_idx": int}``
         """
+        # """Return current aggregated status."""
         return {
             "frames": self._frames,
             "drops": self._drops,

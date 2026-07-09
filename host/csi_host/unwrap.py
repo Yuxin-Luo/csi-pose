@@ -1,8 +1,8 @@
 class TimeUnwrapper:
-    """esp_timer_us(u32, 71.58분 랩)를 보드 단위로 단조 시각으로 복원.
+    """Restore esp_timer_us (u32, 71.58 min wrap) to monotonic time per board.
 
-    update() 반환: (unwrapped_us, event)  event ∈ {"", "wrap", "reboot"}.
-    boot_id 변경 = 리부트 → 에포크 리셋 (랩 누적과 구별 — 클록 핏도 리셋 대상).
+    update() returns: (unwrapped_us, event)  event in {"", "wrap", "reboot"}.
+    boot_id change = reboot -> epoch reset (distinguished from wrap accumulation — clock fit also resets).
     """
     WRAP = 1 << 32
 

@@ -1,7 +1,7 @@
-"""오버레이 렌더 — 캔버스 기본, --video 시 [영상+골격 | 캔버스] 나란히.
+"""Overlay rendering — canvas only, [video+skeleton | canvas] side-by-side when --video.
 
-관절 순서 = teacher BODY-18(coco17_to_body18 산출 순서). 엣지는 OpenPose BODY-18
-표준 18연결 — teacher에 엣지 상수가 없어 여기 1회 정의(이중 정의 금지)."""
+Joint order = teacher BODY-18 (coco17_to_body18 output order). Edges are OpenPose BODY-18
+standard 18 connections — edge constant not in teacher, defined here once (no double-definition)."""
 import cv2
 import numpy as np
 
@@ -19,7 +19,7 @@ def project(xy_norm, W, H):
 
 def _draw_skeleton(img, xy, c, W, H):
     xy = np.asarray(xy, np.float32)
-    finite = np.isfinite(xy).all(axis=1)  # per-joint 좌표 NaN/Inf 게이트 — 코너 점·선 차단
+    finite = np.isfinite(xy).all(axis=1)  # Per-joint coordinate NaN/Inf gate — block corner points/lines
     px = project(xy, W, H)
     for a, b in EDGES:
         if finite[a] and finite[b] and c[a] >= C_MIN and c[b] >= C_MIN:
@@ -31,7 +31,7 @@ def _draw_skeleton(img, xy, c, W, H):
 
 
 def _banner(img, present, fall_state, hud):
-    # fall.py FSM 상태 어휘(IDLE/IMPACT/ALARM)와 결합 — 미지 상태 = KeyError(fail-loud)
+    # Combined with fall.py FSM state vocabulary (IDLE/IMPACT/ALARM) — undefined state = KeyError (fail-loud)
     color = {"IDLE": (80, 80, 80), "IMPACT": (0, 160, 255),
              "ALARM": (0, 0, 230)}[fall_state]
     cv2.rectangle(img, (0, 0), (img.shape[1], 28), color, -1)
@@ -45,9 +45,9 @@ def _banner(img, present, fall_state, hud):
 
 
 def render(video_frame, xy_norm, c, *, present, fall_state, hud):
-    """video_frame=None → 캔버스 단독. ndarray → [영상+골격 | 캔버스] 가로 연결.
+    """video_frame=None -> canvas only. ndarray -> [video+skeleton | canvas] horizontal concat.
 
-    hud 필수 6키: fps·infer_ms·e2e_ms·drop·motion·random."""
+    hud required 6 keys: fps·infer_ms·e2e_ms·drop·motion·random."""
     W, H = CANVAS_WH
     canvas = np.zeros((H, W, 3), np.uint8)
     if present and xy_norm is not None:

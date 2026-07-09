@@ -1,8 +1,13 @@
-# train/ 세션 매니페스트 — 분할은 세션 단위 고정(시간 누수 금지).
-# 사용법: 이 파일을 train.yaml 로 복사한 뒤 세션 h5 경로를 기재.
-# 경로는 WSL2 ext4 사본 권장(/mnt/c 9P 경유 반복 I/O로 직접 학습 금지).
-# 단일 세션뿐이면 train/split_session.py 시간순 물리 분할(앞80/뒤20, 갭3s) 사용 —
-# 단, 교차 세션 검증 기준은 충족하지 못하므로 게이트 수치는 참고용.
+# train/ session manifest — splits are fixed at session level (no time leakage).
+# (Original Korean: train/ 세션 매니저스트 — 분할은 세션 단위 고정(시간 누수 금지).)
+# Usage: copy this file as train.yaml, then fill in session h5 paths.
+# (Original Korean: 사용법: 이 파일을 train.yaml 로 복사한 뒤 세션 h5 경로를 기재.)
+# Paths: WSL2 ext4 copy recommended (direct learning via /mnt/c 9P path causes repeated I/O).
+# (Original Korean: 경로는 WSL2 ext4 사본 권장(/mnt/c 9P 경유 반복 I/O로 직접 학습 금지).)
+# If only one session, use train/split_session.py for chronological physical split (front80/back20, gap3s) —
+# (Original Korean: 단일 세션뿐이면 train/split_session.py 시간순 물리 분할(앞80/뒤20, 갭3s) 사용 —)
+# but note cross-session validation criteria are not met, so gate numbers are for reference only.
+# (Original Korean: 교차 세션 검증 기준은 충족하지 못하므로 게이트 수치는 참고용.)
 sessions:
   - {h5: /path/to/data/SESSION-train.h5, role: train, type: example-t80}
   - {h5: /path/to/data/SESSION-val.h5,   role: val,   type: example-v20}

@@ -1,8 +1,8 @@
-"""인과 그리드/윈도 절단 — 배치 align 프리미티브 재사용.
+"""Causal grid/window cutting — reuse batch align primitives.
 
-버퍼에 t≤T 패킷만 존재 → grid_block의 'tb > s.t[-1] → 마스크'가 곧 인과 제약.
-따라서 rt valid ⊆ 배치 valid (꼬리 결손 보수 처리)가 구조적으로 성립한다.
-boot_id 변화 = 리부트 → 해당 링크 버퍼 클리어(에포크 경계 너머 보간 금지)."""
+Buffer only has t<=T packets -> grid_block's 'tb > s.t[-1] -> mask' is exactly the causal constraint.
+Therefore rt valid is a subset of batch valid (tail truncation repair is structurally guaranteed).
+boot_id change = reboot -> clear that link buffer (no interpolation across epoch boundary)."""
 from collections import deque
 from dataclasses import dataclass
 
@@ -22,14 +22,14 @@ class Pkt:
     boot_id: int
     t_ns: int
     seq: int
-    amp: np.ndarray            # (56,) f32 — amplitude(iq) 산출물
+    amp: np.ndarray            # (56,) f32 — amplitude(iq) product
 
 
 @dataclass(frozen=True, eq=False)
 class CutResult:
-    X: np.ndarray              # (280,3,3) f16 — 배치 cut_windows와 동일 규약
+    X: np.ndarray              # (280,3,3) f16 — same convention as batch cut_windows
     valid: bool
-    bad: np.ndarray            # (3,3) int — 링크별 마스크 슬롯 수
+    bad: np.ndarray            # (3,3) int — per-link mask slot count
 
 
 class RingBuf:
@@ -45,7 +45,7 @@ class RingBuf:
             d.clear()
         self._boot[(p.rx, p.tx)] = p.boot_id
         if d and (p.t_ns <= d[-1].t_ns or p.seq <= d[-1].seq):
-            return  # 비단조(같은 boot의 seq 역행) = 글리치/재전송 — 폐기 (진짜 TX 재시작은 boot_id 변화로 도착 → clear)
+            return  # Non-monotonic (same boot seq backward) = glitch/retransmit — discard (real TX restart has boot_id change -> clear)
         d.append(p)
         while d and d[0].t_ns < p.t_ns - self._h:
             d.popleft()
@@ -56,7 +56,7 @@ class RingBuf:
         mask_blk = np.zeros((5, 3, 3), bool)
         for rx, tx in LINKS:
             d = self._links[(rx, tx)]
-            if len(d) < 2:                           # grid_block 전제(n≥2) 미달
+            if len(d) < 2:                           # grid_block prerequisite (n>=2) not met
                 mask_blk[:, rx, tx] = True
                 continue
             t = np.fromiter((p.t_ns for p in d), np.int64, len(d))
@@ -64,8 +64,8 @@ class RingBuf:
             amp = np.stack([p.amp for p in d])
             t2, a2, m2, br = fill_gaps(t, seq, amp)
             a, m = grid_block(LinkStream(t=t2, amp=a2, interp=m2, breaks=br), tb)
-            # 클램프(+1ns) 쌍이 외삽 분모가 되면 진폭 폭주(f16 overflow) — 물리 상한
-            # 클립(int8 iq 최대 |127+127j|≈179.6 < 256, 정상·배치 경로는 무영향)
+            # Clamp (+1ns) pair: if it becomes extrapolation denominator, amplitude explodes (f16 overflow)
+            # Physical upper limit (int8 iq max |127+127j|~179.6 < 256, normal/batch paths unaffected)
             amp_blk[:, :, rx, tx], mask_blk[:, rx, tx] = np.clip(a, 0.0, 256.0), m
         X, valid = cut_windows(amp_blk, mask_blk, np.array([0]))
         return CutResult(X=X[0], valid=bool(valid[0]),

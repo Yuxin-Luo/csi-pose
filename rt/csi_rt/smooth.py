@@ -1,4 +1,4 @@
-"""EMA 평활(§11, α=0.5) — absent 동안 리셋(재등장 시 첫 관측으로 재초기화)."""
+"""EMA smoothing (§11, alpha=0.5) — reset during absence (re-initialize with first observation on reappearance)."""
 import numpy as np
 
 

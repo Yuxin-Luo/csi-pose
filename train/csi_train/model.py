@@ -1,15 +1,15 @@
-"""WiSPPN CSI→PAM 회귀 네트워크 — 비공식 수정 구현 (unofficial modified implementation).
+"""WiSPPN CSI->PAM regression network -- unofficial modified implementation.
 
-출처: https://github.com/geekfeiw/WiSPPN 의 models/wisppn_resnet.py 를 기반으로 수정.
-논문: Fei Wang, Stanislav Panev, Ziyi Dai, Jinsong Han, Dong Huang,
+Source: https://github.com/geekfeiw/WiSPPN 's models/wisppn_resnet.py as base.
+Paper: Fei Wang, Stanislav Panev, Ziyi Dai, Jinsong Han, Dong Huang,
       "Can WiFi Estimate Person Pose?", arXiv:1904.00277 (2019).
-원 저장소에는 라이선스 파일이 없으므로 이 파일의 원본 부분 저작권은 원저자에게 있으며,
-본 저장소는 출처 표기와 함께 사용한다 (README의 출처/라이선스 절 참조).
-참고로 원본의 ResidualBlock·make_layer 골격 자체는 yunjey/pytorch-tutorial(MIT) 계열의
-표준 ResNet 구현이다.
+The original repository has no license file, so the original parts' copyright belongs to the original authors,
+and this repository uses it with attribution (see the source/license section of README).
+Note: The original ResidualBlock/make_layer skeleton itself is from yunjey/pytorch-tutorial (MIT)
+standard ResNet implementation.
 
-수정점: ① stem 280→150 정식 사용(원본은 conv1 미호출 버그) ② decode 최종 2ch→3ch(x,y,ĉ)
-③ interpolate scale_factor=48 → size=(144,144) 명시(동등) ④ vector_head 변형.
+Modifications: ① stem 280->150 officially used (original has conv1 not called bug) ② decode final 2ch->3ch(x,y,c_hat)
+③ interpolate scale_factor=48 -> size=(144,144) explicit (equivalent) ④ vector_head variant.
 """
 import torch.nn as nn
 import torch.nn.functional as F
@@ -39,7 +39,7 @@ class ResidualBlock(nn.Module):
 
 
 class WiSPPN(nn.Module):
-    """(B,in_ch,3,3) → (B,3,18,18) PAM(x,y,ĉ); vector_head=True → (B,3,18) 대각 직접."""
+    """(B,in_ch,3,3) -> (B,3,18,18) PAM(x,y,c_hat); vector_head=True -> (B,3,18) diagonal direct."""
 
     def __init__(self, in_ch=280, width=150, layers=(2, 2, 2, 2), n_joints=18,
                  vector_head=False):
@@ -57,7 +57,7 @@ class WiSPPN(nn.Module):
             self.head = nn.Sequential(nn.Linear(width * 2, 64), nn.ReLU(inplace=True),
                                       nn.Linear(64, 3 * n_joints))
         else:
-            self.decode = nn.Sequential(            # 원본 decode + 최종 3ch(bias=False 원본 유지)
+            self.decode = nn.Sequential(            # Original decode + final 3ch (bias=False original preserved)
                 conv3x3(width * 2, 64), nn.BatchNorm2d(64), nn.ReLU(inplace=True),
                 nn.Conv2d(64, 3, 1, bias=False))
 
@@ -72,7 +72,7 @@ class WiSPPN(nn.Module):
         return nn.Sequential(*blocks_)
 
     def forward(self, x):
-        size = self.n_joints * 8                     # 144 — stride 2 ×3 후 18×18
+        size = self.n_joints * 8                     # 144 — after stride 2 x3 = 18x18
         x = F.interpolate(x, size=(size, size), mode="bilinear", align_corners=False)
         x = self.stem(x)
         x = self.layer4(self.layer3(self.layer2(self.layer1(x))))

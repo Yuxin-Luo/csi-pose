@@ -1,7 +1,7 @@
-"""RecorderCore — MQTT 메시지 → SessionWriter.
+"""RecorderCore — MQTT messages -> SessionWriter.
 
-MQTT 클라이언트는 주입(브리지 BridgeCore 패턴) — handle(topic, payload)만 호출하면
-되므로 가짜 클라이언트로 테스트. CRC는 parse_frame에서 재검증(전송 경로 불신)."""
+MQTT client is injected (BridgeCore pattern) — just call handle(topic, payload).
+CRC is re-verified in parse_frame (transport path is not trusted)."""
 from csi_host.bridge_core import unpack_csi
 from csi_host.framing import parse_frame
 from csi_host.gap import LinkTracker
@@ -13,36 +13,36 @@ except ImportError:
     msgpack = None
 
 
-# 레코더가 구독할 기본 토픽 목록 — wire_client의 기본값이자 외부 참조용 상수.
+# Default topic list the recorder subscribes to — wire_client default and external reference constant.
 SUBSCRIPTIONS = [("csi/#", 0), ("cam/meta", 0)]
 
 
 def wire_client(client, on_message, *, subscriptions=None, log=None):
-    """클라이언트에 콜백을 설치한다. loop_start() 전에 호출할 것
-    (CONNACK은 네트워크 루프에서 처리되므로 connect() 전후 모두 가능).
+    """Install callbacks on the client. Call before loop_start()
+    (CONNACK is processed in the network loop, so both before and after connect are fine).
 
-    구독을 on_connect 안에서 수행해야 브로커 재시작 후 자동 재연결 시
-    재구독이 보장된다 — connect() 한 번만 호출되는 곳에서 subscribe()를
-    직접 호출하면 재연결 후 구독이 복원되지 않아 조용히 0프레임 세션이 된다.
+    Subscriptions must be done inside on_connect to guarantee re-subscription after broker
+    restart — calling subscribe() directly where connect() is called once will not restore
+    subscriptions after reconnect, resulting in silent zero-frame sessions.
 
-    paho 1.x(인자 4개)·2.x VERSION2(인자 5개) 시그니처를 모두 지원한다.
-    _on_connect 내부에서 예외를 던지면 안 된다: paho는 콜백 예외를 재전파해
-    네트워크 스레드가 조용히 죽는다(레코더의 _error_flag 경로를 타지 않음).
+    Supports both paho 1.x (4-arg) and 2.x VERSION2 (5-arg) signatures.
+    Exceptions must not be raised inside _on_connect: paho re-propagates callback exceptions,
+    causing the network thread to die silently (bypassing the recorder's _error_flag path).
     """
     _subs = subscriptions if subscriptions is not None else SUBSCRIPTIONS
 
     def _on_connect(client, userdata, flags, rc, properties=None):
-        # paho는 rc≠0(연결 거부)에도 on_connect를 호출 — 거부 시 subscribe는 무의미.
-        # rc는 1.x=int, 2.x=ReasonCode지만 ReasonCode.__eq__가 int 비교를 지원해
-        # rc != 0이 양쪽 호환.
+        # paho calls on_connect even on rc!=0 (connection refused) — subscription is meaningless when refused.
+        # rc is int in 1.x, ReasonCode in 2.x, but ReasonCode.__eq__ supports int comparison,
+        # so rc != 0 is compatible on both sides.
         if rc != 0:
             if log is not None:
-                log(f"[rec] on_connect 거부 rc={rc} — 재구독 생략")
+                log(f"[rec] on_connect rejected rc={rc} — skipping re-subscription")
             return
-        # 연결·재연결 시마다 재구독 — 브로커 재시작 내성의 핵심
+        # Re-subscribe on every connect/reconnect — key to broker restart tolerance
         client.subscribe(_subs)
         if log is not None:
-            log(f"[rec] on_connect: 재구독 {_subs}")
+            log(f"[rec] on_connect: re-subscribed {_subs}")
 
     client.on_connect = _on_connect
     client.on_message = on_message
@@ -60,24 +60,24 @@ class RecorderCore:
         self.cam_errors = 0
         self.unknown = 0
         self.reboots = 0
-        self.wraps = 0       # u32 랩 누적 횟수 (rx별 합산)
+        self.wraps = 0       # u32 wrap cumulative count (per-rx sum)
 
     def handle(self, topic, payload, t_recv_ns=0):
-        # t_recv_ns: 레코더 수신 시각 — 브리지가 찍은 호스트 시각(unpack_csi 페이로드에 포함)을
-        # 쓰므로 이 값은 보조 참고용일 뿐이며 저장 경로에 사용되지 않음.
+        # t_recv_ns: recorder receive time — bridge-stamped host time (included in unpack_csi payload)
+        # is used as auxiliary reference only; it is NOT used for the storage path.
         if topic.startswith("csi/"):
             self._on_csi(payload)
         elif topic == "cam/meta":
             self._on_cam(payload)
         elif topic.startswith("sys/"):
-            pass                                    # 하트비트 — 저장 대상 아님
+            pass                                    # Heartbeat — not stored
         else:
             self.unknown += 1
 
     def _on_csi(self, payload):
         try:
             t_ns, raw = unpack_csi(payload)
-            f = parse_frame(raw)            # CRC 재검증 포함 — 실패 시 None 또는 예외
+            f = parse_frame(raw)            # CRC re-verification included — returns None or exception on failure
         except Exception:
             self.crc_drops += 1
             return
@@ -108,11 +108,11 @@ class RecorderCore:
         try:
             d = msgpack.unpackb(payload)
             if not isinstance(d, dict):
-                raise ValueError("cam/meta가 dict 아님")
+                raise ValueError("cam/meta is not a dict")
             t = d.get("t_ns", d.get(b"t_ns"))
             fi = d.get("frame_idx", d.get(b"frame_idx"))
             if t is None or fi is None:
-                raise ValueError("t_ns/frame_idx 누락")
+                raise ValueError("t_ns/frame_idx missing")
             self.writer.append_video(int(t), int(fi))
             self.cam_frames += 1
         except Exception:
@@ -123,7 +123,8 @@ class RecorderCore:
             self.on_event(kind, val)
 
     def status(self):
-        # links 키는 "rx-tx" — 브리지는 1브리지=1rx라 tx만 키, 리코더는 멀티 rx라 둘 다 필요
+        # Links key is "rx-tx" — bridge is 1-bridge=1rx so only tx is needed as key,
+        # recorder is multi-rx so needs both
         return {
             "frames": self.frames, "crc_drops": self.crc_drops,
             "cam_frames": self.cam_frames, "cam_errors": self.cam_errors,

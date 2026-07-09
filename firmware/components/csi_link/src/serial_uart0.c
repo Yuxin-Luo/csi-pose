@@ -18,10 +18,10 @@ void csil_serial_init(void)
         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
         .source_clk = UART_SCLK_DEFAULT,
     };
-    /* TX 링 131072: usb_jtag 백엔드와 동일 근거 (호스트 정체 ~3.3s 내성) */
+    /* TX ring 131072: same rationale as usb_jtag backend (host congestion tolerance ~3.3s) */
     ESP_ERROR_CHECK(uart_driver_install(PORT, 4096, 131072, 0, NULL, 0));
     ESP_ERROR_CHECK(uart_param_config(PORT, &cfg));
-    /* 로그(stdout)도 드라이버 경유 — 프레임 write와의 바이트 단위 인터리브 방지 */
+    /* Also route logs(stdout) through driver — prevents byte-level interleaving with frame writes */
     uart_vfs_dev_use_driver(PORT);
 }
 

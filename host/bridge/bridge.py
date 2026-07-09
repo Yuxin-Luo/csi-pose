@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
-"""시리얼 → raw 로그 + MQTT 브리지 (Windows 네이티브 실행, 설계 §5).
+# """Serial -> raw log + MQTT bridge (Windows native execution, design §5).
+#
+# One process per RX board COM port:
+#   python bridge.py --port COM24 --rx-id 0 [--no-mqtt] [--raw-dir logs] [--auto-start]
+#
+# Principle (§5): timestamp is time.time_ns() immediately after serial read -- single host clock.
+# Append-only raw log is the original -- HDF5 can be rebuilt even if MQTT/recorder dies.
+# On COM disconnection: 1 second backoff auto-reconnect, status published every 5s to sys/status/rxN.
+# """
+"""Serial -> raw log + MQTT bridge (Windows native execution, design §5).
 
-RX 보드 COM 포트 1개당 1프로세스:
+One process per RX board COM port:
   python bridge.py --port COM24 --rx-id 0 [--no-mqtt] [--raw-dir logs] [--auto-start]
 
-원칙(§5): 타임스탬프는 시리얼 read 직후의 time.time_ns() — 단일 호스트 시계.
-append-only raw 로그가 원본 — MQTT/레코더가 죽어도 HDF5 재구축 가능.
-COM 단절 시 1초 백오프 자동 재접속, 상태는 5초마다 sys/status/rxN 발행.
+Principle (§5): timestamp is time.time_ns() immediately after serial read -- single host clock.
+Append-only raw log is the original -- HDF5 can be rebuilt even if MQTT/recorder dies.
+On COM disconnection: 1 second backoff auto-reconnect, status published every 5s to sys/status/rxN.
 """
 import argparse
 import json
@@ -40,15 +49,15 @@ class MqttSink:
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--port", required=True, help="예: COM24")
+    ap.add_argument("--port", required=True, help="Example: COM24")
     ap.add_argument("--rx-id", type=int, required=True, choices=[0, 1, 2])
     ap.add_argument("--baud", type=int, default=921600)
     ap.add_argument("--mqtt-host", default="127.0.0.1")
     ap.add_argument("--mqtt-port", type=int, default=1883)
-    ap.add_argument("--no-mqtt", action="store_true", help="raw 로그만 (MQTT 생략)")
+    ap.add_argument("--no-mqtt", action="store_true", help="Raw log only (skip MQTT)")
     ap.add_argument("--raw-dir", default="logs")
     ap.add_argument("--auto-start", action="store_true",
-                    help="접속(재접속 포함) 시 START 송신 — seq 리셋은 reset 이벤트로 처리됨")
+                    help="Send START on connect (including reconnect) -- seq reset handled by reset event")
     ap.add_argument("--status-period", type=float, default=5.0)
     args = ap.parse_args()
 
@@ -80,9 +89,9 @@ def main():
                 time.sleep(1)
                 continue
             try:
-                # Windows 드라이버 수신 버퍼 증설 — 호스트 일시 멈춤(~수 초)에도
-                # 바이트 유실 방지 (2026-06-10 소크: 3포트 동시 CRC = 호스트 정체).
-                # 39KB/s × 256KB ≈ 6.5s 내성. 비Windows는 미지원이라 무시.
+                # Windows driver receive buffer expansion -- prevents byte loss even if host
+                # temporarily pauses (~few seconds) (2026-06-10 soak: 3-port simultaneous CRC = host stall).
+                # 39KB/s × 256KB ≈ 6.5s tolerance. Non-Windows not supported, ignored.
                 ser.set_buffer_size(rx_size=262144)
             except (AttributeError, OSError):
                 pass
@@ -93,7 +102,7 @@ def main():
                 while True:
                     chunk = ser.read(4096)
                     if chunk:
-                        core.ingest(time.time_ns(), chunk)  # 직후 단일 시계
+                        core.ingest(time.time_ns(), chunk)  # Immediately after -- single clock
                     now = time.monotonic()
                     if now - last_status >= args.status_period:
                         last_status = now

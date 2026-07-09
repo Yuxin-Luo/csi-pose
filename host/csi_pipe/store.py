@@ -1,8 +1,8 @@
-"""HDF5 세션 스토어 — 스키마(§5.3 + esp_us/noise 확장)의 유일한 쓰기 경로 (스펙 결정 ②).
+"""HDF5 session store — only write path for schema (§5.3 + esp_us/noise extension) (spec decision ②).
 
-/links에는 원시값만: 보정·보간·리샘플은 빌드 산출물(/grid, /samples — samples.py)이며
-언제든 재실행 가능하다. iq 페어 내 (I,Q) 순서는 §16-6 SC표 확정 시 재검증 —
-진폭 계산에는 무영향.
+/links contains raw values only: correction/interpolation/resampling are build artifacts
+(/grid, /samples — samples.py) and can be re-run at any time. (I,Q) order in iq pairs must be
+re-verified when §16-6 SC table is finalized — no impact on amplitude calculation.
 """
 import json
 import threading
@@ -24,9 +24,9 @@ _LINK_FIELDS = [
 
 class SessionWriter:
     def __init__(self, path, *, meta=None, chunk=4096):
-        # h5py는 스레드세이프 아님 — 레코더는 paho 콜백 스레드(append)와 메인 스레드(주기
-        # flush)가 동시 진입하므로 공개 변이 메서드 전체를 락으로 직렬화.
-        # RLock인 이유: close→flush처럼 락 보유 중 내부 재호출(재진입)이 있음.
+        # h5py is not thread-safe — recorder uses paho callback thread (append) and main thread
+        # (periodic flush) concurrently, so all public mutation methods are serialized with a lock.
+        # RLock because: close->flush, etc. internal re-calls (re-entry) occur while holding the lock.
         self._lock = threading.RLock()
         self._h = h5py.File(path, "w")
         self._meta = self._h.create_group("meta")
@@ -36,8 +36,8 @@ class SessionWriter:
         self._chunk = chunk
         self._closed = False
         self._buf = {}      # (rx,tx) -> {field: list}
-        self._counts = {}   # (rx,tx) -> 기록 완료 수
-        self._vid = []      # (t_ns, frame_idx) 쌍
+        self._counts = {}   # (rx,tx) -> record count
+        self._vid = []      # (t_ns, frame_idx) pairs
         self._h.create_dataset("video/t_ns", shape=(0,), maxshape=(None,),
                                dtype=np.uint64, chunks=(1024,))
         self._h.create_dataset("video/frame_idx", shape=(0,), maxshape=(None,),
@@ -113,7 +113,7 @@ class SessionWriter:
 
     def close(self):
         with self._lock:
-            if self._closed:    # 멱등 — 이중 close 무해 (append-after-close는 계속 예외)
+            if self._closed:    # Idempotent — double close is harmless (append-after-close still raises)
                 return
             self._closed = True
             self.flush()
@@ -146,7 +146,7 @@ class SessionReader:
 
     @property
     def video_frame_idx(self):
-        """구세션(필드 없음)은 None — 호출 측이 identity 폴백."""
+        """Legacy sessions (no field) return None — caller falls back to identity."""
         if "video/frame_idx" not in self._h:
             return None
         return self._h["video/frame_idx"][...]

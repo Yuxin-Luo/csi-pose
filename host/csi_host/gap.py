@@ -1,8 +1,8 @@
 class LinkTracker:
-    """링크(rx_i, tx_j)별 seq 결손 추적 (RF 손실과 전송 손실 분리 진단).
+    """Track seq gaps per link (rx_i, tx_j) (RF loss vs transmission loss diagnostic).
 
-    update(seq) 반환: None(정상) | "gap"(결손 가산) | "reset"(seq 후퇴 — TX 리부트
-    또는 START 재시작으로 간주, 결손 비가산·baseline 재설정).
+    update(seq) returns: None (normal) | "gap" (loss counted) | "reset" (seq rolled back --
+    TX reboot or START restart, loss not counted, baseline reset).
     """
 
     def __init__(self):
@@ -25,7 +25,7 @@ class LinkTracker:
         return event
 
     def rebaseline(self):
-        """다음 update를 baseline으로 — RX 리부트 공백을 RF 손실로 오인 방지."""
+        """Next update is the new baseline -- prevents RX reboot gap from being mistaken as RF loss."""
         self._last = None
 
     @property

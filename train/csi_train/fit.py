@@ -1,9 +1,7 @@
-"""학습/평가 루프 — AdamW·cosine+warmup·bf16, best=val PCK@0.2.
-
-체크포인트는 텐서·기본형만 저장 → torch.load 기본(weights_only=True)으로 로드 가능.
-loss parts는 detach 텐서(Task 4 리뷰) — 텐서로 누적, epoch 경계에서만 스칼라 변환.
-use_compile: 이 환경 torch 2.12+cu130 inductor 사전결함으로 불능 — 기본 False 유지.
-"""
+# Training/evaluation loop — AdamW, cosine+warmup, bf16, best=val PCK@0.2.
+# Checkpoint stores only tensors and primitives -> loadable with torch.load default (weights_only=True).
+# Loss parts are detached tensors (Task 4 review) — accumulated as tensors, scalar conversion only at epoch boundary.
+# use_compile: disabled by default due to torch 2.12+cu130 inductor pre-existing defects in this environment.
 import json
 import math
 import random
@@ -36,10 +34,9 @@ def make_scheduler(opt, *, total_steps, warmup_steps):
 
 
 def predict(model, X, *, device, batch=64):
-    """X (N,C,3,3) f16 numpy (C=280|560) → (xy (N,18,2) f32, ĉ (N,18) f32) — 대각 추출.
-
-    batch 기본 64: forward가 입력을 144×144로 업샘플하므로 (B,150,144,144) f32
-    중간 텐서가 B×11.9MB — 512였을 때 5.93GiB 단일 할당으로 16GiB GPU OOM(실측)."""
+    # X (N,C,3,3) f16 numpy (C=280|560) -> (xy (N,18,2) f32, c_hat (N,18) f32) — diagonal extraction.
+    # Default batch 64: forward upsamples input to 144x144 so (B,150,144,144) f32
+    # intermediate tensor is B×11.9MB — at 512 that was 5.93GiB single allocation causing 16GiB GPU OOM (measured).
     model.eval()
     xs, cs = [], []
     with torch.no_grad():
@@ -68,7 +65,7 @@ def _git_rev():
 
 def save_ckpt(path, model, *, mu, sigma, config, kappa, best,
               mu_phase=None, sigma_phase=None):
-    raw = getattr(model, "_orig_mod", model)               # torch.compile 언랩
+    raw = getattr(model, "_orig_mod", model)               # torch.compile unwrap
     ck = {"state_dict": {k: v.cpu() for k, v in raw.state_dict().items()},
           "mu": torch.from_numpy(np.asarray(mu)),
           "sigma": torch.from_numpy(np.asarray(sigma)),
@@ -82,7 +79,7 @@ def save_ckpt(path, model, *, mu, sigma, config, kappa, best,
 
 
 def load_ckpt(path, *, device="cpu"):
-    ck = torch.load(path, map_location=device)             # weights_only=True 기본(2.6+)
+    ck = torch.load(path, map_location=device)             # weights_only=True default (2.6+)
     cfg = ck["config"]
     model = WiSPPN(in_ch=cfg["in_ch"], vector_head=cfg["vector_head"]).to(device)
     model.load_state_dict(ck["state_dict"])
@@ -99,7 +96,7 @@ def _val_arrays(rows):
 def train_model(splits, hyper, *, mode="pam_full", vector_head=False, lam=1.0,
                 augment=False, name="run", out_root="runs", device=None,
                 use_compile=False, progress=print):
-    """학습 → {"best_pck02", "ckpt", "epochs"}. best = val PCK@0.2 최대 시점."""
+    """Train -> {"best_pck02", "ckpt", "epochs"}. best = val PCK@0.2 max epoch."""
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     set_seed(hyper["seed"])
     tr, va = splits["train"], splits["val"]
@@ -107,7 +104,7 @@ def train_model(splits, hyper, *, mode="pam_full", vector_head=False, lam=1.0,
     model = WiSPPN(in_ch=in_ch, vector_head=vector_head).to(device)
     if use_compile:
         model = torch.compile(model)
-    Xtr = torch.from_numpy(tr.X).to(device)                # f16 보관, 배치 캐스팅
+    Xtr = torch.from_numpy(tr.X).to(device)                # f16 storage, batch casting
     Ytr = torch.from_numpy(tr.Y).to(device)
     Ptr = torch.from_numpy(tr.presence).to(device)
     B, epochs = hyper["batch"], hyper["epochs"]
@@ -115,13 +112,14 @@ def train_model(splits, hyper, *, mode="pam_full", vector_head=False, lam=1.0,
     opt = torch.optim.AdamW(model.parameters(), lr=hyper["lr"], weight_decay=hyper["wd"])
     sched = make_scheduler(opt, total_steps=steps * epochs,
                            warmup_steps=steps * hyper["warmup"])
-    # κ — train 직립 GT 캘리브, 합성 등 직립 부재 시 설계 예상치 0.5 폴백(§9)
+    # κ — calibration from train upright GT, fallback 0.5 if no upright frames (§9)
     mtr, xy_tr, c_tr, WH_tr, _ = _val_arrays(tr)
     try:
         kappa = calibrate_kappa(xy_tr, c_tr, WH_tr)
     except ValueError:
         kappa = 0.5
-        progress("κ 캘리브 불가(직립 프레임 없음) — 0.5 폴백")
+        # kappa calibration failed (no upright frames) — fallback to 0.5
+        progress("κ calibration failed (no upright frames) — fallback to 0.5")
     mva, xy_va, c_va, WH_va, st_va = _val_arrays(va)
     out = Path(out_root) / name
     out.mkdir(parents=True, exist_ok=True)
@@ -139,7 +137,7 @@ def train_model(splits, hyper, *, mode="pam_full", vector_head=False, lam=1.0,
         for ep in range(epochs):
             model.train()
             perm = torch.randperm(len(tr.X), device=device)
-            tot = {"coord": 0.0, "conf": 0.0}              # detach 텐서 누적(스텝 동기 금지)
+            tot = {"coord": 0.0, "conf": 0.0}              # detached tensor accumulation (step sync blocked)
             for s in range(steps):
                 b = perm[s * B:(s + 1) * B]
                 xb = Xtr[b].float()

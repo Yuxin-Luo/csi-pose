@@ -5,15 +5,15 @@
 
 extern const uint8_t CSIL_BCAST[6]; /* FF:FF:FF:FF:FF:FF */
 
-/* STA 모드 브링업: PS off, 11b rate 비활성(DSSS는 OFDM CSI 없음), 채널 고정 */
+/* STA mode bringup: PS off, 11b rate disabled (DSSS has no OFDM CSI), channel fixed */
 esp_err_t csil_wifi_start(uint8_t ch);
 
-/* 순서 엄수: esp_now_init → 브로드캐스트 피어 add_peer 선등록 →
- * esp_now_set_peer_rate_config(HT20/MCS0_LGI). TX 전용. */
+/* Strict order: esp_now_init → broadcast peer add_peer pre-registration →
+ * esp_now_set_peer_rate_config(HT20/MCS0_LGI). TX only. */
 esp_err_t csil_espnow_tx_init(void);
 
-/* RX 측 ESP-NOW 수신 경로 활성 (CSI payload 파싱용 — recv 콜백은 불요) */
+/* Activate RX-side ESP-NOW receive path (for CSI payload parsing — recv callback not needed) */
 esp_err_t csil_espnow_rx_init(void);
 
-/* 정지 상태 전용: 전 채널 스캔 → "SCAN ch=n ap=k best=r" 라인들 작성 후 채널 원복 */
+/* Idle-only: full-channel scan → write "SCAN ch=n ap=k best=r" lines, then restore channel */
 esp_err_t csil_wifi_scan_report(char *out, size_t cap, uint8_t restore_ch);

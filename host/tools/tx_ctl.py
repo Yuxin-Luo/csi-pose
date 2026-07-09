@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""보드 일괄 시리얼 명령 (MAC 채록, SET_IDX/SET_CH/START/STOP/SCAN).
+"""Board batch serial command (MAC readout, SET_IDX/SET_CH/START/STOP/SCAN).
 
-예:
+Example:
   python tx_ctl.py --ports COM34 COM35 COM36 --cmd HELLO
   python tx_ctl.py --ports COM34 --cmd "SET_IDX 0"
   python tx_ctl.py --ports COM34 COM35 COM36 --cmd "START rate=100"
@@ -17,7 +17,7 @@ def main():
     ap.add_argument("--ports", nargs="+", required=True)
     ap.add_argument("--cmd", required=True)
     ap.add_argument("--baud", type=int, default=921600)
-    ap.add_argument("--wait", type=float, default=1.0, help="응답 대기 초 (SCAN은 5 권장)")
+    ap.add_argument("--wait", type=float, default=1.0, help="Response wait time in seconds (5 recommended for SCAN)")
     args = ap.parse_args()
 
     import serial

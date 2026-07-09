@@ -9,8 +9,8 @@
 void csil_serial_init(void)
 {
     usb_serial_jtag_driver_config_t cfg = {
-        /* 131072: 39KB/s에서 ~3.3s 내성 — 호스트 주기 정체(>0.4s, 2026-06-11
-         * 소크에서 3보드 동시 CRC로 실측)에도 보드측 바이트 유실 방지 */
+        /* 131072: ~3.3s tolerance at 39KB/s — prevents board-side byte loss even when host
+         * periodic congestion (>0.4s, measured on 2026-06-11 with 3 boards simultaneous CRC in Sok) */
         .tx_buffer_size = 131072,
         .rx_buffer_size = 4096,
     };

@@ -21,10 +21,10 @@ esp_err_t csil_wifi_start(uint8_t ch)
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_protocol(WIFI_IF_STA,
         WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N));
-    /* 11b 금지 보강 (§4.1) — esp_wifi_start() 이전에만 호출 가능 */
+    /* 11b prohibition reinforcement (§4.1) — can only be called before esp_wifi_start() */
     ESP_ERROR_CHECK(esp_wifi_config_11b_rate(WIFI_IF_STA, true));
     ESP_ERROR_CHECK(esp_wifi_start());
-    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));            /* 타이밍 일관성 */
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));            /* Timing consistency */
     ESP_ERROR_CHECK(esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE));
     return ESP_OK;
 }
@@ -35,11 +35,11 @@ esp_err_t csil_espnow_tx_init(void)
     esp_now_peer_info_t peer = {0};
     memcpy(peer.peer_addr, CSIL_BCAST, 6);
     peer.ifidx = WIFI_IF_STA;
-    peer.channel = 0; /* 현재 채널 추종 */
-    ESP_ERROR_CHECK(esp_now_add_peer(&peer)); /* rate config 전 선등록 필수 (§4.1) */
+    peer.channel = 0; /* Follow current channel */
+    ESP_ERROR_CHECK(esp_now_add_peer(&peer)); /* Must be registered first before rate config (§4.1) */
     esp_now_rate_config_t rc = {
         .phymode = WIFI_PHY_MODE_HT20,
-        .rate = WIFI_PHY_RATE_MCS0_LGI, /* HT 프레임이어야 HT-LTF 56SC 확보 (§4.1) */
+        .rate = WIFI_PHY_RATE_MCS0_LGI, /* Requires HT frame to secure HT-LTF 56SC (§4.1) */
     };
     ESP_ERROR_CHECK(esp_now_set_peer_rate_config(CSIL_BCAST, &rc));
     return ESP_OK;
@@ -52,7 +52,7 @@ esp_err_t csil_espnow_rx_init(void)
 
 esp_err_t csil_wifi_scan_report(char *out, size_t cap, uint8_t restore_ch)
 {
-    wifi_scan_config_t sc = {0}; /* 전 채널 액티브 스캔 */
+    wifi_scan_config_t sc = {0}; /* Full-channel active scan */
     esp_err_t err = esp_wifi_scan_start(&sc, true);
     if (err != ESP_OK) {
         snprintf(out, cap, "ERR scan %d\n", (int)err);

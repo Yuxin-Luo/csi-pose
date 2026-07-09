@@ -2,300 +2,344 @@
 
 [English](README.md) | **한국어**
 
-WiFi CSI(Channel State Information)만으로 단일 인물의 2차원 18관절 자세를 추정하고
-그 위에 규칙 기반 낙상 감지를 얹는 시스템. 카메라·웨어러블 없이, 사람 몸에
-산란·차폐되며 변형되는 2.4GHz 전파의 흔적(서브캐리어별 진폭)을 신호원으로 쓴다.
+A system that estimates the 2D pose (18 joints) of a single person from WiFi CSI
+(Channel State Information) alone, with rule-based fall detection on top. No
+camera or wearables at inference time — the signal source is the trace a human
+body leaves on 2.4GHz radio waves (per-subcarrier amplitude) through scattering
+and shadowing.
 
-WiSPPN(Intel 5300 단일 NIC의 3×3 **안테나 행렬**)을 시판 ESP32-S3 6대(3TX×3RX)의
-3×3 **링크 행렬**로 치환 이식한 구성이다. 웹캠+RTMPose가 교사(teacher)로 의사
-라벨을 생성하고, 학생 모델은 50ms 윈도의 CSI 진폭 텐서에서 관절 좌표를 회귀한다 —
-학습이 끝나면 추론에 카메라는 필요 없다.
+This is a port of WiSPPN (Intel 5300 single NIC, 3×3 **antenna matrix**) onto six
+off-the-shelf ESP32-S3 boards (3TX×3RX) forming a 3×3 **link matrix**. A
+webcam+RTMPose teacher generates pseudo-labels; the student model regresses joint
+coordinates from 50ms windows of CSI amplitude tensors — once trained, no camera
+is needed.
 
 <p align="center">
-  <img src="figures/fall-demo.gif" alt="실시간 CSI 포즈 + 낙상 감지 데모" width="600"><br>
-  <em>실시간 데모 — 초록색 18관절 스켈레톤은 WiFi CSI만으로 추론한 것(추론 시 카메라 없음).
-  상단 배너는 낙상 감지 발화를 표시: <strong>PRESENT | ALARM</strong>.</em>
+  <img src="figures/fall-demo.gif" alt="Real-time CSI pose + fall-detection demo" width="600"><br>
+  <em>Real-time demo — the green 18-joint skeleton is inferred from WiFi CSI alone
+  (no camera at inference). The top banner shows the fall detector firing:
+  <strong>PRESENT | ALARM</strong>.</em>
 </p>
 
-## 파이프라인
+## Pipeline
 
 ```
-① firmware/  ESP32-S3 TX 3대가 ESP-NOW 비컨 송신(~103pps), RX 3대가 CSI 추출
-                → 130B 프레임으로 시리얼 출력 (csi_link/ 는 TX·RX 공용 컴포넌트)
-② host/      bridge: 시리얼→rawlog 원본 보존+MQTT 중계 · recorder: HDF5 세션 기록
-                csi_pipe: 클록 핏·정렬·샘플 빌드 라이브러리 · tools: 운영 CLI
-③ teacher/   동기 녹화된 웹캠 영상에 RTMDet→RTMPose를 돌려 포즈 라벨 생성
-④ train/     CSI→PAM 회귀 네트워크(WiSPPN-ESP) 학습
-⑤ rt/        학습된 모델로 실시간 포즈 추정(~20Hz) + 낙상 감지 데모
+① firmware/  3 ESP32-S3 TX boards broadcast ESP-NOW beacons (~103pps); 3 RX
+                boards extract CSI → 130B frames over serial
+                (csi_link/ is the shared TX/RX component)
+② host/      bridge: serial→raw-log preservation + MQTT relay · recorder: HDF5
+                session writer · csi_pipe: clock-fit/alignment/sample-build
+                library · tools: operations CLIs
+③ teacher/   run RTMDet→RTMPose over the synchronously recorded webcam video
+                to generate pose labels
+④ train/     train the CSI→PAM regression network (WiSPPN-ESP)
+⑤ rt/        real-time pose estimation (~20Hz) + fall-detection demo
 ```
 
-## 시스템 아키텍처
+## System architecture
 
 <p align="center">
-  <img src="figures/fig_arch.png" alt="시스템 아키텍처" width="900"><br>
-  <em>3계층 구조: RF 하드웨어(ESP32-S3 TX/RX), Windows 네이티브 캡처(단일 호스트 시계),
-  WSL2 연산(학습·실시간). 실선=실시간 경로, 점선=오프라인.</em>
+  <img src="figures/fig_arch.png" alt="System architecture" width="900"><br>
+  <em>Three layers: RF hardware (ESP32-S3 TX/RX), native-Windows capture (single
+  host clock), and WSL2 compute (training & realtime). Solid = realtime path,
+  dashed = offline.</em>
 </p>
 
-## 무엇을 검출하나
+## What it detects
 
-모델은 연속적인 18관절 2D 스켈레톤을 출력하고, 그 위에서 두 가지 상위 신호를 끌어낸다:
+The model outputs a continuous 18-joint 2D skeleton; two higher-level signals
+are derived on top of it:
 
-- **자세 — 직립 vs 누움.** 추정된 스켈레톤 코어 바운딩 박스의 종횡비로 분류한다
-  (대략: 세로가 길면 직립, 가로가 길면 누움). 직립→누움 전환은 아래 낙상 단서 중
-  하나로도 쓰인다.
-- **낙상.** 규칙 기반 유한 상태기계(IDLE → IMPACT → ALARM). 3개 단서 중 2개 이상이
-  발화하면 IMPACT — (R1) 골반/엉덩이 급강하, (R2) 직립→누움 전환, (R3) 머리가 화면
-  하단으로 진입 — 이후 유지 창 동안 "누움 & 정지" 자세가 확인되어야만 ALARM으로
-  승격된다. 다시 일어서거나 자리를 벗어나면 경보가 해제된다.
+- **Posture — standing vs. lying down.** Classified from the aspect ratio of
+  the estimated skeleton's core bounding box (roughly: box taller than wide =
+  standing, wider than tall = lying). The standing→lying transition is also one
+  of the fall cues below.
+- **Falls.** A rule-based finite state machine (IDLE → IMPACT → ALARM). An
+  IMPACT is raised when ≥2 of 3 cues fire — (R1) fast pelvis/hip descent,
+  (R2) a standing→lying transition, (R3) the head dropping into the lower part
+  of the frame — and is promoted to an ALARM only if a sustained "lying & still"
+  posture is then confirmed over a hold window. Recovery (standing back up, or
+  leaving the area) releases the alarm.
 
-리플레이 데모 결과: **연출된 낙상 11회 중 10회 감지, 오탐 2회** (단일 세션).
+Replay-demo result: **10 of 11 staged falls detected, 2 false positives**
+(single session).
 
-> **정직한 범위.** 낙상 임계값은 단일 세션(`fall-demo-01`)으로만 캘리브된 잠정값이며,
-> 누움 부분집합·교차 세션 정량 평가는 이후 본 수집 캠페인으로 미뤄둔 항목이다. CSI
-> 기반 정지 판정은 현재 비활성(자세별 모션 에너지 분포가 겹쳐 분리 실패)이라 확인은
-> 포즈 기하에 의존한다. 동작하는 데모로 볼 것 — **검증된 의료·안전 장비가 아니다.**
+> **Honest scope.** The fall thresholds are provisional（临时的）, calibrated（校准） from a
+> single session (`fall-demo-01`); quantitative lying-subset and cross-session
+> evaluation are deferred to a fuller data campaign. The CSI-based stillness
+> check is currently disabled (per-posture motion-energy distributions
+> overlapped), so confirmation relies on pose geometry. Treat this as a working
+> demo, **not a validated medical or safety device.**
 
 <p align="center">
-  <img src="figures/fig_fsm.png" alt="낙상 감지 상태기계" width="860"><br>
-  <em>낙상 감지 상태기계(IDLE → IMPACT → ALARM)와 규칙·해제 조건.</em>
+  <img src="figures/fig_fsm.png" alt="Fall-detection state machine" width="860"><br>
+  <em>The fall-detection state machine (IDLE → IMPACT → ALARM) with its rules and
+  release conditions.</em>
 </p>
 
 <p align="center">
-  <img src="figures/fig9_fall_timeline.png" alt="낙상 리플레이 타임라인" width="660"><br>
-  <em>720초 세션·연출 낙상 11회에 대한 리플레이 결과: recall 10/11, precision 10/12,
-  참양성 상승시간 중앙값 0.34초.</em>
+  <img src="figures/fig9_fall_timeline.png" alt="Fall-detection replay timeline" width="660"><br>
+  <em>Fall-detection replay over a 720 s session with 11 scripted falls: recall
+  10/11, precision 10/12, median true-positive rise time 0.34 s.</em>
 </p>
 
-## 핵심 원리 1 — 시각 동기화 (이종 클록 정렬)
+## Key idea 1 — Time synchronization (aligning heterogeneous clocks)
 
-보드 3대의 esp_timer는 서로 독립이고 호스트 시계와도 다르다. 모든 캡처(CSI 패킷
-도착, 웹캠 프레임 grab)는 **단일 호스트 시계 `time.time_ns()`** 로 스탬프하되,
-USB 시리얼 도착 시각에는 배칭 지연이 섞인다. 핵심 아이디어는 이 지연의 **비대칭성**:
-USB 지연은 패킷을 늦출 수만 있고 일찍 도착시킬 수는 없다. 따라서 (보드 시각, 호스트
-시각) 산점도의 **하한 포락선(아래 볼록 껍질)** 이 참 클록 변환의 불편 추정이 된다.
+The boards' esp_timer clocks are independent of each other and of the host.
+Every capture (CSI packet arrival, webcam frame grab) is stamped with a
+**single host clock, `time.time_ns()`** — but USB serial arrival times include
+batching delay. The key idea is the **asymmetry** of that delay: USB delay can
+only make packets late, never early. Therefore the **lower envelope (lower
+convex hull)** of the (board time, host time) scatter is an unbiased estimate
+of the true clock transform.
 
 ```
- ESP32-S3 보드 시계 (esp_timer µs)        호스트 시계 time.time_ns() ── 단일 기준
+ ESP32-S3 board clock (esp_timer µs)      Host clock time.time_ns() — single reference
         │                                        │
-        └────── USB 시리얼 도착 ──────► (esp, t_host) 산점도
+        └────── USB serial arrival ──────► (esp, t_host) scatter plot
                                             │
-              USB 배칭 지연은 +방향(늦음)만  │   ← "일찍 도착"은 물리적으로 불가
+              USB batching delay is +only   │   ← "arriving early" is physically impossible
                                             ▼
-                       산점의 하한 포락선 = 참 클록 변환
-            (오프라인: boot 에포크별 구간 선형 핏 / 실시간: rolling-min 근사)
+                       lower envelope of the scatter = true clock transform
+            (offline: piecewise-linear fit per boot epoch / realtime: rolling-min)
                                             │
                                             ▼
-        모든 CSI 패킷 → 보정 시각 t_fit → 100Hz(10ms) 그리드 재표본
+        every CSI packet → corrected time t_fit → resampled onto a 100Hz (10ms) grid
                                             │
- 웹캠 프레임 grab 시각 (동일 호스트 시계) ───┤
+ webcam frame grab time (same host clock) ──┤
                                             ▼
-              페어링 보정: 참값 = 스탬프 − 보정값 (계통 지연 실측치 적용,
-              CSI 경로·카메라 파이프라인 지연을 STOP 이벤트/모니터 플립으로 분해 측정)
+              pairing correction: truth = stamp − correction (measured systematic
+              delays, decomposed via STOP events / monitor-flip filming)
                                             ▼
-              프레임 앵커마다 직전 50ms(5패킷) CSI 윈도 절단 → 학습 샘플
+              cut the trailing 50ms (5-packet) CSI window at each frame anchor → sample
 ```
 
-발진기 온도 드리프트는 구간(윈도 600s)별 핏+선형 보간으로 흡수하고, 보드 리부트는
-boot_id로 에포크를 분리한다. 잔여 불확도 ±15ms 수준 — 낙상 속도 2~3m/s 기준
-3~5cm 라벨 노이즈에 해당한다.
+Oscillator temperature drift is absorbed by windowed (600s) fits plus linear
+interpolation; board reboots split epochs via boot_id. Residual uncertainty is
+about ±15ms — equivalent to 3–5cm of label noise at fall speeds of 2–3m/s.
 
-## 핵심 원리 2 — 교사 라벨링 (웹캠 포즈 → CSI 라벨)
+## Key idea 2 — Teacher labeling (webcam pose → CSI labels)
 
-웹캠은 학습 데이터 수집 때만 쓰는 교사다. 영상에서 뽑은 관절 좌표를, 위에서 맞춘
-공통 시간축으로 같은 순간의 CSI 윈도에 붙여 (X, Y) 학습쌍을 만든다.
+The webcam is a teacher used only during data collection. Joint coordinates
+extracted from video are joined — on the common time axis established above —
+to the CSI window of the same instant, forming (X, Y) training pairs.
 
 ```
- 웹캠 mp4 ──► RTMDet-m (사람 검출) ──► RTMPose-m (COCO-17) ──► BODY-18 변환
-   │ 프레임별 t_ns                                               │ (목=어깨 중점 합성)
-   │              0명=no_person · 2명 이상=multi(폐기)            ▼
-   │                                        QA 게이트 (무작위 표본 사람 눈 검수, <2%)
-   │                                                             │
-   ▼                                                             ▼
- t_ns 조인: 프레임 시각 = 앵커 ──► 같은 시각의 CSI 윈도와 페어링   Y = PAM (3,18,18)
-                                              │                  │  대각 = 관절 (x,y,ĉ)
- 9링크(3TX×3RX) × 56서브캐리어 × 5패킷        │                  │
-   ──► 진폭 텐서 X (280,3,3) ─────────────────┴──► 학습: f(X) ≈ Y
-                                                                 │
-                                          추론은 CSI만 사용 ── 카메라 불필요
+ webcam mp4 ──► RTMDet-m (person det.) ──► RTMPose-m (COCO-17) ──► BODY-18 conversion
+   │ per-frame t_ns                                                │ (neck = shoulder midpoint)
+   │              0 persons=no_person · ≥2=multi (discard)         ▼
+   │                                       QA gate (random-sample human review, <2%)
+   │                                                               │
+ ▼                                                               ▼
+ t_ns join: frame time = anchor ──► paired with same-instant CSI    Y = PAM (3,18,18)
+                                              │                    │  diag = joints (x,y,ĉ)
+ 9 links (3TX×3RX) × 56 subcarriers × 5 pkts  │                    │
+   ──► amplitude tensor X (280,3,3) ──────────┴──► training: f(X) ≈ Y
+                                                                   │
+                                            inference uses CSI only — no camera
 ```
 
-빈 방 프레임은 버리지 않고 presence=0 음성 샘플로 학습에 쓴다(손실 가중이 좌표항을
-자동 차단). 보드 간 발진기가 독립이라 링크 간 위상차는 무작위량이므로 **링크 간 위상은
-특징으로 쓰지 않으며**, 진폭(+링크 내부 위상 형상은 옵트인 ablation)만 사용한다.
-보드별 AGC 차이는 링크별 L2 정규화로 흡수한다.
+Empty-room frames are not discarded — they become presence=0 negative samples
+(the loss weighting automatically suppresses the coordinate terms). Because
+board oscillators are independent, inter-link phase differences are random
+quantities, so **inter-link phase is never used as a feature**; only amplitude
+is (intra-link phase shape is an opt-in ablation). Per-board AGC differences
+are absorbed by per-link L2 normalization.
 
-## 데이터 수집 프로토콜
+## Data-collection protocol
 
-방을 **체계적으로 표본화**한 방법과, 운영자 1명 + 피험자 1명이 키보드로 세그먼트를
-마킹하며 수집한 절차(`m15-cap1` 세션, 약 13분).
+How the room was **systematically sampled**, and how one operator + one subject
+ran a capture with keyboard-marked segments (the `m15-cap1` session, ~13 min).
 
 <p align="center">
-  <img src="figures/capture-grid_ko.png" alt="데이터 수집 격자" width="640"><br>
-  <em>방을 고정 3×3 격자로 표본화해 데이터가 위치와 몸 방향을 모두 포괄하게 한다.</em>
+  <img src="figures/capture-grid_ko.png" alt="Data-collection grid" width="640"><br>
+  <em>The room is sampled on a fixed 3×3 grid so the dataset covers both location
+  and body orientation.</em>
 </p>
 
-**방 표본화.** 방을 **3×3 = 9개 서기 위치**로 나눈다(가로 0.85 m × 세로 1.15 m,
-TX–RX 시선 중심). 피험자는 **1 → 9 순서**로 이동하고, 각 점에서 **N·E·S·W 4방향으로
-회전(각 ~10초)** 한다 — 데이터가 *어디에* 있는지와 *어느 방향*을 보는지를 모두 담는다.
-중앙의 매트는 앉기 / 눕기 / 낙상 세그먼트에 쓴다.
+**Room sampling.** The room is divided into a **3×3 grid of 9 standing positions**
+(0.85 m east–west × 1.15 m north–south), centered on the TX–RX line of sight. The
+subject visits them in order **1 → 9**; at each position they **rotate through four
+facings — N, E, S, W (~10 s each)**, so the dataset spans both *where* the person is
+and *which way* they face. A mat at the center is used for the sit / lie / fall
+segments.
 
-**키보드 마킹 세그먼트(총 13개).** 운영자가 **Enter** 로 각 세그먼트의 시작과 끝을
-마킹하고, 걷기·출입은 마킹 *밖*에서 일어나므로 정확한 시간은 자유롭다.
+**Keyboard-marked segments (13 total).** The operator presses **Enter** to mark the
+start and end of every segment; walking and entering/leaving happen *outside* the
+marks, so exact timing is flexible.
 
-| # | 세그먼트 | 길이 | 비고 |
+| # | Segment | Duration | Notes |
 |---|---|---|---|
-| 1 | 빈방(도입) | 60초 | 방이 빈 것 확인 후 "들어오세요" 큐 |
-| 2–10 | 서기, 위치 1–9 | 각 40초 | 십자에 정착 → **Enter** → N / E / S / W 방향(각 ~10초) → **Enter** → 다음 |
-| 11 | 매트에 앉기(5번) | 40초 | |
-| 12 | 매트에 눕기 | 60초 | 머리는 **북쪽** |
-| 13 | 빈방(꼬리) | 60초 | 피험자 퇴장, 문 닫기 — 마지막 **Enter** 필수 |
+| 1 | empty (lead-in) | 60 s | confirm the room is empty, then cue "come in" |
+| 2–10 | standing, positions 1–9 | 40 s each | settle on the cross → **Enter** → face N / E / S / W (~10 s each) → **Enter** → next |
+| 11 | sit on the mat (pos 5) | 40 s | |
+| 12 | lie on the mat | 60 s | head points **North** |
+| 13 | empty (tail) | 60 s | subject leaves, door closed — final **Enter** required |
 
-두 **빈방 세그먼트**(1, 13)는 학습의 `presence = 0` 음성 샘플이 된다. 로거는 세그먼트
-13 이후 자동 종료된다(`segments = 13, aborted = False`).
+The two **empty-room segments** (1 and 13) become the `presence = 0` negative samples
+used in training; the logger auto-closes after segment 13 (`segments = 13,
+aborted = False`).
 
-> **수집 규칙.** 세그먼트 도중 로거를 `Ctrl-C` 하지 말 것(해당 세그먼트가 중단됨).
-> 수집 호스트에서 다른 작업을 돌리지 말 것(CPU 부하가 시리얼 버퍼를 굶긴다).
+> **Capture rules.** Never `Ctrl-C` the logger mid-segment (it aborts that segment);
+> run nothing else on the capture host (CPU load starves the serial buffers).
 
-## 수학적 정식화
+## Mathematical formulation
 
-핵심 수식 (GitHub 수식 렌더링).
+The core of the formulation, rendered with GitHub math.
 
-**텐서화.** 9개 링크 각각의 최근 $P{=}5$ 패킷(10 ms 그리드) $\times\,K{=}56$ 서브캐리어
-진폭으로 입력 텐서를 만든다. 임의 어레이 크기에 대한 일반형도 함께:
+**Tensorization.** The most recent $P{=}5$ packets (10 ms grid) $\times\,K{=}56$
+subcarrier amplitudes of each of the 9 links build the input tensor, with a
+general form for arbitrary array sizes:
 
 $$X[56p+k,\,i,\,j]=A^{(i,j)}_{t-(4-p)\Delta,\;k},\quad p=0\ldots4,\ \Delta=10\text{ ms}\ \Rightarrow\ X\in\mathbb{R}^{280\times3\times3}$$
 
 $$X\in\mathbb{R}^{(P\cdot K)\times N_R\times N_T},\qquad f_\theta:X\mapsto\hat{Y}\in\mathbb{R}^{3\times J\times J},\quad J=18$$
 
-**위상 정제.** 패킷별 STO/CFO는 서브캐리어 축의 선형 램프로 나타나며 최소제곱 사영으로 제거:
+**Phase sanitization.** Per-packet STO/CFO appear as a linear ramp across the
+subcarrier axis and are removed by a least-squares projection:
 
 $$\tilde{\varphi}=P\,\mathrm{unwrap}(\varphi),\qquad P=I_{56}-A(A^\top A)^{-1}A^\top,\quad A=[\,\mathbf{k}\ \ \mathbf{1}\,]\in\mathbb{R}^{56\times2}$$
 
-**정규화** — 링크별 L2 → z-score, 선택적 RSSI 재스케일:
+**Normalization** — per-link L2, then z-score, with an optional RSSI rescale:
 
 $$\hat{X}^{(i,j)}=\frac{X^{(i,j)}}{\lVert X^{(i,j)}\rVert_2},\qquad z=\frac{\hat{X}-\mu}{\sigma},\qquad \tilde{X}^{(i,j)}=\hat{X}^{(i,j)}\cdot 10^{\mathrm{RSSI}_{ij}/20}$$
 
-**학습 목적함수** — 포즈 인접행렬에 대한 가중 MSE, presence 게이트·신뢰도 하한 가중:
+**Learning objective** — weighted MSE over the pose adjacency matrix, with
+presence-gated, confidence-floored weights:
 
 $$\mathcal{L}=\frac{1}{|\Omega|}\sum_{(u,v)\in\Omega}w_{uv}\lVert\hat{Y}_{uv}-Y_{uv}\rVert_2^2,\qquad w=\mathbb{1}[\text{presence}]\cdot\max(\hat{c}_{\mathrm{gt}},\,0.2)$$
 
-**평가** — 누움에 강건한 분모 $D_f$ 를 쓰는 $\mathrm{PCK@}\alpha$:
+**Evaluation** — $\mathrm{PCK@}\alpha$ with a lying-robust denominator $D_f$:
 
 $$\mathrm{PCK@}\alpha=\mathbb{E}_{(f,j):\,c_{fj}\ge0.3}\big[\mathbb{1}(\lVert\hat{p}_{fj}-p_{fj}\rVert_2\le\alpha D_f)\big]$$
 
 $$D_f=\mathbb{1}[\mathrm{AR}_f{<}0.8]\max(\mathrm{torso}_f,\kappa\,\mathrm{diag}_f)+\mathbb{1}[\mathrm{AR}_f{\ge}0.8]\,\mathrm{torso}_f,\qquad \kappa=\mathrm{median}_{f:\,\mathrm{AR}_f\ge1.2}\frac{\mathrm{torso}_f}{\mathrm{diag}_f}$$
 
-**클록 모델·페어링.** USB 배칭 지연은 비음(非陰)이라 (보드, 호스트) 타임스탬프 산점의
-하한 포락선이 불편 클록 변환이 된다. 영상은 실측 계통 오프셋으로 정렬:
+**Clock model & pairing.** USB batching delay is non-negative, so the lower
+envelope of the (board, host) timestamp scatter is the unbiased clock transform;
+video is aligned by a measured systematic offset:
 
 $$t^{\text{host}}=(1+\rho)\,t^{\text{esp}}+\beta+\delta_{\text{usb}}+\varepsilon,\quad \delta_{\text{usb}}\ge0\ \Rightarrow\ \text{lower-envelope fit}$$
 
 $$\mathrm{anchor}'=t_{\text{vid}}-(\Delta_{\text{cam}}-\Delta_{\text{csi}})=t_{\text{vid}}-156.12\text{ ms}$$
 
-**실시간 연산자** — 모델-프리 모션 에너지와 낙상 규칙 R1(0.3초 창 골반 하강 기울기):
+**Realtime operators** — model-free motion energy, and the fall rule R1 (hip
+descent slope over a 0.3 s window):
 
 $$E(t)=\frac{1}{9}\sum_{i,j}\mathrm{std}_{s\in[t-w,\,t]}\bar{A}^{(i,j)}(s),\quad \bar{A}=\frac{1}{K}\sum_k A_k,\ \ w=0.5\text{ s}$$
 
-$$\hat{\beta}_1=\arg\min_{\beta}\sum_{s\in[t-0.3,\,t]}\big(y^{\text{hip}}_s-\beta_0-\beta_1 s\big)^2,\qquad \hat{\beta}_1>\theta_v=0.4\text{ 이면 R1 발화}$$
+$$\hat{\beta}_1=\arg\min_{\beta}\sum_{s\in[t-0.3,\,t]}\big(y^{\text{hip}}_s-\beta_0-\beta_1 s\big)^2,\qquad \text{R1 fires when }\hat{\beta}_1>\theta_v=0.4$$
 
-## 모델
+## Model
 
 <p align="center">
-  <img src="figures/fig_model.png" alt="WiSPPN-ESP 모델" width="900"><br>
-  <em>WiSPPN-ESP — (280,3,3) CSI 진폭 텐서를 ResNet-18 변형 인코더로 처리하고,
-  PAM decode 헤드(18×18 인접행렬) 또는 18관절 좌표를 직접 회귀하는 벡터 헤드로 끝난다.</em>
+  <img src="figures/fig_model.png" alt="WiSPPN-ESP model" width="900"><br>
+  <em>WiSPPN-ESP — a ResNet-18-style encoder over the (280,3,3) CSI amplitude
+  tensor, ending in either a PAM decode head (18×18 adjacency matrix) or a vector
+  head that regresses the 18 joint coordinates directly.</em>
 </p>
 
-## 결과
+## Results
 
-> 단일 세션·단일 인물·단일 환경(시간순 80/20 분할). 교차 환경 벤치마크가 아니라
-> 동작 데모 수치다 — 교차 세션·누움 부분집합 평가는 이후 본 수집 캠페인으로 남겨둔 항목이다.
-
-<p align="center">
-  <img src="figures/fig3_motion_correlation.png" alt="CSI–모션 상관" width="560"><br>
-  <em>CSI 모션 통계 vs 카메라 측정 인체 모션: 피어슨 <strong>r = 0.603</strong>
-  (n = 4,391). 지연 교차상관 피크가 −0.1초로 100ms 미만 CSI–영상 정합을 확인.</em>
-</p>
+> Single session, single subject, single room (time-ordered 80/20 split). These
+> are working-demo numbers, not a cross-environment benchmark — cross-session
+> and lying-subset evaluation are left to a fuller data campaign.
 
 <p align="center">
-  <img src="figures/fig1_csi_spectrogram_motion.png" alt="CSI 스펙트로그램과 모션" width="660"><br>
-  <em>CSI 진폭 스펙트로그램(단일 링크, 56 서브캐리어)과 영상 키포인트 속도를 따라가는
-  CSI 모션 통계.</em>
+  <img src="figures/fig3_motion_correlation.png" alt="CSI–motion correlation" width="560"><br>
+  <em>The CSI motion statistic vs. camera-measured human motion: Pearson
+  <strong>r = 0.603</strong> (n = 4,391); the lagged cross-correlation peaks at
+  −0.1 s, confirming sub-100 ms CSI–video alignment.</em>
 </p>
 
 <p align="center">
-  <img src="figures/fig7_ablation_gates.png" alt="ablation vs 게이트" width="560"><br>
-  <em>입력 표현 ablation: 최고 런 PCK@0.2 = 0.495 / PCK@0.5 = 0.897 — 절대 게이트(0.35)와
-  두 베이스라인(평균포즈 0.185, kNN 0.321)을 상회.</em>
+  <img src="figures/fig1_csi_spectrogram_motion.png" alt="CSI spectrogram and motion" width="660"><br>
+  <em>CSI amplitude spectrogram (one link, 56 subcarriers) with the CSI motion
+  statistic tracking the vision-derived keypoint speed.</em>
 </p>
 
 <p align="center">
-  <img src="figures/fig8_perjoint_pck.png" alt="관절별 PCK" width="560"><br>
-  <em>관절별 PCK@0.2 vs 베이스라인 — 학습 모델은 모션이 풍부한 얼굴·팔 관절에서 우세.
-  정적 포즈 재현이 아니라 모션 관련 채널 특징을 학습한다는 증거.</em>
+  <img src="figures/fig7_ablation_gates.png" alt="Ablation vs gates" width="560"><br>
+  <em>Input-representation ablation: best run PCK@0.2 = 0.495 / PCK@0.5 = 0.897 —
+  above the absolute gate (0.35) and both baselines (mean-pose 0.185, kNN 0.321).</em>
 </p>
 
 <p align="center">
-  <img src="figures/fig4_rssi_presence.png" alt="RSSI와 재실" width="560"><br>
-  <em>링크별 RSSI 분포, 빈방 vs 재실 — 재실 시 모든 링크의 분포가 넓어져 RSSI를
-  보조 입력 피처로 쓸 근거가 된다.</em>
+  <img src="figures/fig8_perjoint_pck.png" alt="Per-joint PCK" width="560"><br>
+  <em>Per-joint PCK@0.2 vs. baselines — the learned model wins on motion-rich face
+  and arm joints, evidence it learns motion-related channel features rather than
+  replaying a static pose.</em>
 </p>
-
-추가 그림(서브캐리어/링크 상관, 위상 정제, 학습 곡선): [`docs/figures/`](docs/figures/) 참고.
-
-## 하드웨어 요구사항
-
-- ESP32-S3 개발 보드 6대 (TX 3 + RX 3, ESP-IDF로 빌드 — HT20, 56 서브캐리어)
-- USB-UART 어댑터/케이블 6개 (CH340 등) 또는 보드 내장 USB Serial/JTAG
-- USB 웹캠 1대 (교사 라벨 수집용 — 학습 후 실시간 추론에는 불필요)
-- MQTT 브로커 (mosquitto, 기본 localhost:1883)
-
-권장 구동 환경: 캡처(시리얼·웹캠)는 Windows 네이티브, 학습·실시간 추론은
-WSL2(ext4) — 타임스탬프 단일화와 I/O 성능 때문이며, 단일 OS 환경에서도 동작한다.
 
 <p align="center">
-  <img src="figures/room-layout.png" alt="측정 공간 평면도" width="560"><br>
-  <em>측정 공간(3.45 × 5.65 m). TX 어레이(하단, 위로 향함)와 RX + 카메라 클러스터(상단,
-  아래로 향함)가 긴 축을 따라 마주 본다. 중앙 매트리스가 낙상 지점.</em>
+  <img src="figures/fig4_rssi_presence.png" alt="RSSI vs occupancy" width="560"><br>
+  <em>Per-link RSSI distributions, empty vs. occupied — occupancy widens every
+  link's distribution, motivating RSSI as an auxiliary input feature.</em>
 </p>
 
-## 시작하기
+More figures (subcarrier/link correlation, phase sanitization, training curves):
+see [`docs/figures/`](docs/figures/).
+
+## Hardware requirements
+
+- 6 ESP32-S3 dev boards (3 TX + 3 RX, built with ESP-IDF — HT20, 56 subcarriers)
+- 6 USB-UART adapters/cables (CH340 etc.) or the boards' built-in USB Serial/JTAG
+- 1 USB webcam (teacher label collection only — not needed for inference)
+- An MQTT broker (mosquitto, default localhost:1883)
+
+Recommended setup: capture (serial/webcam) on native Windows, training and
+real-time inference on WSL2 (ext4) — for timestamp unification and I/O
+performance. A single-OS setup works as well.
+
+<p align="center">
+  <img src="figures/room-layout.png" alt="Measurement room layout" width="560"><br>
+  <em>Measurement room (3.45 × 5.65 m). The TX array (bottom, facing up) and the
+  RX + camera cluster (top, facing down) face each other along the long axis;
+  the mattress at the center is the fall point.</em>
+</p>
+
+## Getting started
 
 ```bash
 pip install -r requirements.txt
 
-# 로컬 설정 — 예시를 복사해 자기 환경 값으로 교체 (원본은 .gitignore 대상)
-cp configs/boards.example.yaml configs/boards.yaml   # COM 포트·보드 MAC
-cp configs/train.example.yaml  configs/train.yaml    # 세션 h5 경로
+# Local configs — copy the examples and fill in your environment
+# (the originals are gitignored)
+cp configs/boards.example.yaml configs/boards.yaml   # COM ports · board MACs
+cp configs/train.example.yaml  configs/train.yaml    # session h5 paths
 
-# 펌웨어 (ESP-IDF v5.x)
-cd firmware/tx && idf.py set-target esp32s3 build flash    # TX 3대
-cd firmware/rx && idf.py set-target esp32s3 build flash    # RX 3대
+# Firmware (ESP-IDF v5.x)
+cd firmware/tx && idf.py set-target esp32s3 build flash    # 3 TX boards
+cd firmware/rx && idf.py set-target esp32s3 build flash    # 3 RX boards
 ```
 
-명명 규칙: `csi_*` 디렉토리(`csi_host/`, `csi_pipe/`, `csi_train/` 등)는 라이브러리
-모듈이고, 같은 영역의 루트 스크립트(`bridge.py`, `train.py` 등)는 CLI 래퍼다.
-코드 주석의 "설계 §N"·"스펙 …"은 내부 설계 문서의 절 번호다.
+Naming convention: `csi_*` directories (`csi_host/`, `csi_pipe/`, `csi_train/`,
+…) are library modules; the sibling top-level scripts (`bridge.py`, `train.py`,
+…) are CLI wrappers.
 
-## 저자
+Code comments and CLI help strings are written in Korean. "설계 §N" /
+"스펙 …" in comments refer to section numbers of an internal design document.
 
-Kyung-Bo Kim, Hyun-Seok Jang, So-Hyeon Kim, Gyu-Chae Jung.
+## Authors
 
-## 출처 및 라이선스 고지
+Kyung-Bo Kim, Hyun-Seok Jang, So-Hyeon Kim, and Gyu-Chae Jung.
 
-- **`train/csi_train/model.py`** 는 [geekfeiw/WiSPPN](https://github.com/geekfeiw/WiSPPN)의
-  `models/wisppn_resnet.py` 를 기반으로 수정한 비공식 구현이다.
-  논문: Fei Wang, Stanislav Panev, Ziyi Dai, Jinsong Han, Dong Huang,
+## Attribution & license notices
+
+- **`train/csi_train/model.py`** is an unofficial modified implementation based
+  on `models/wisppn_resnet.py` from [geekfeiw/WiSPPN](https://github.com/geekfeiw/WiSPPN).
+  Paper: Fei Wang, Stanislav Panev, Ziyi Dai, Jinsong Han, Dong Huang,
   *"Can WiFi Estimate Person Pose?"*, [arXiv:1904.00277](https://arxiv.org/abs/1904.00277) (2019).
-  원 저장소에는 라이선스 파일이 없으며, 해당 파일의 원본 유래 부분 저작권은
-  원저자에게 있다. 본 저장소는 출처 표기와 함께 이를 사용한다.
-- **teacher 단계**는 첫 실행 시 [OpenMMLab mmpose](https://github.com/open-mmlab/mmpose)
-  (Apache-2.0)의 RTMDet/RTMPose ONNX 모델을 download.openmmlab.com 에서 자동
-  다운로드한다. 모델 파일 자체는 본 저장소에 포함되지 않는다.
-- `teacher/csi_teacher/qa.py` 의 BODY-18 림 정의는 OpenPose 표준 스켈레톤
-  토폴로지(사실 데이터)다.
+  The upstream repository has no license file; copyright of the parts derived
+  from it remains with the original authors. This repository uses them with
+  attribution.
+- The **teacher stage** automatically downloads RTMDet/RTMPose ONNX models from
+  download.openmmlab.com ([OpenMMLab mmpose](https://github.com/open-mmlab/mmpose),
+  Apache-2.0) on first run. The model files themselves are not included in this
+  repository.
+- The BODY-18 limb definition in `teacher/csi_teacher/qa.py` is the standard
+  OpenPose skeleton topology (factual data).
 
-본 저장소의 라이선스: [MIT](LICENSE).
-단, 위 `train/csi_train/model.py` 의 원본 유래 부분은 본 저장소 라이선스와
-무관하게 원저자 저작권이 유지된다.
+License of this repository: [MIT](LICENSE). Note that the parts of
+`train/csi_train/model.py` derived from the original remain under the original
+authors' copyright, independent of this repository's license.

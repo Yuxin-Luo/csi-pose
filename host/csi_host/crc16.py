@@ -1,5 +1,5 @@
 def crc16_ccitt(data: bytes, crc: int = 0xFFFF) -> int:
-    """CRC16-CCITT-FALSE: poly 0x1021, init 0xFFFF, 비반사. 펌웨어 csil_crc16과 동일."""
+    """CRC16-CCITT-FALSE: poly 0x1021, init 0xFFFF, non-reflected. Identical to firmware csil_crc16."""
     for b in data:
         crc ^= b << 8
         for _ in range(8):

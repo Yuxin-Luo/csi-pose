@@ -1,8 +1,9 @@
-"""낙상 규칙 + 상태기계 — 3중 2 발화, 유지 확인은 pose+CSI 결합.
+"""Fall rules + state machine — 3 cues 2 fire, confirmation uses pose+CSI combined.
 
-aspect = 픽셀 공간(pck.frame_geometry 재사용, 코어·c<0.3 제외).
-R1·R3·theta_still = 정규화 공간. θ 전부 rt.yaml 잠정값(캘리브는 라운드1 낙상으로만).
-theta_csi_still ≤ 0 = 미캘리브 → CSI 조건 스킵 + 경고 1회 전이 상태."""
+aspect = pixel space (pck.frame_geometry reused, excludes core·c<0.3).
+R1·R3·theta_still = normalized space. All theta values are provisional from rt.yaml
+(calibration uses only round-1 falls).
+theta_csi_still <= 0 means uncalibrated -> skip CSI condition + warn once per transition."""
 import sys
 from collections import deque
 from dataclasses import dataclass
@@ -17,7 +18,7 @@ NOSE, RHIP, LHIP = 0, 8, 11
 @dataclass(frozen=True)
 class FallOut:
     state: str                                      # IDLE | IMPACT | ALARM
-    fired: bool                                     # ALARM 진입 틱에만 True
+    fired: bool                                     # True only on ALARM entry tick
 
 
 class FallDetector:
@@ -25,11 +26,11 @@ class FallDetector:
         self.c = dict(cfg)
         self.WH = np.asarray(WH, np.float32)
         if self.c["theta_csi_still"] <= 0:
-            print("[fall] theta_csi_still 미캘리브(≤0) — CSI 정지 조건 스킵 "
-                  "(configs/rt.yaml 주석 참조)", file=sys.stderr)
+            print("[fall] theta_csi_still uncalibrated (<=0) — skipping CSI stillness condition "
+                  "(see configs/rt.yaml comments)", file=sys.stderr)
         self.state = "IDLE"
-        self._hip = deque()                         # (t, hip_y) ≤0.3s
-        self._aspect = deque()                      # (t, aspect) ≤transition_s
+        self._hip = deque()                         # (t, hip_y) <=0.3s
+        self._aspect = deque()                      # (t, aspect) <=transition_s
         self._impact_t = None
         self._confirm = []                          # (lying, still)
         self._prev_core = None
@@ -73,15 +74,15 @@ class FallDetector:
         if not present:
             self._absent_since = self._absent_since or t_s
             if t_s - self._absent_since < self.c["grace_s"]:
-                return FallOut(self.state, False)    # 유예 — 낙상 순간 ĉ 일시 급락(<1s 실측,
-                                                     # rt-handoff-20260612): 이력·IMPACT 보존, 프레임만 스킵
+                return FallOut(self.state, False)    # Grace period — during fall c_hat temporarily drops (<1s observed,
+                                                     # rt-handoff-20260612): preserve history·IMPACT, skip frames only
             self._hip.clear()
-            self._aspect.clear()                     # R2 = '관찰된 전환' — 유예 초과 absent 너머 이력 무효
+            self._aspect.clear()                     # R2 = 'observed transition' — history invalidated beyond absent grace
             self._prev_core = None
             if (self.state == "ALARM" and t_s >= self._refract_until
                     and t_s - self._absent_since >= self.c["absent_release_s"]):
-                self.state = "IDLE"                  # 해제 조건은 불응 경과 후에만
-            elif self.state == "IMPACT":             # 유예 초과 확인 불능 — 보수적으로 철회
+                self.state = "IDLE"                  # Release only after refractory period
+            elif self.state == "IMPACT":             # Conservative rollback on confirmation timeout
                 self.state = "IDLE"
             return FallOut(self.state, False)
         self._absent_since = None
@@ -97,10 +98,10 @@ class FallDetector:
             if t_s >= self._refract_until and int(r1) + int(r2) + int(r3) >= 2:
                 self.state, self._impact_t, self._confirm = "IMPACT", t_s, []
         elif self.state == "IMPACT":
-            if np.isfinite(aspect) and n_core >= 3:  # 확인 가능 프레임만 적재 — 저신뢰는 분모
-                self._confirm.append((lying, still_pose and still_csi))  # 제외(핸드오프 수정 ②)
+            if np.isfinite(aspect) and n_core >= 3:  # Only load confirmable frames — low confidence in denominator
+                self._confirm.append((lying, still_pose and still_csi))  # Excluded (handoff fix ②)
             if t_s - self._impact_t >= self.c["confirm_s"]:
-                if not self._confirm:                # 확인 가능 프레임 전무 — 판정 불능 철회
+                if not self._confirm:                # No confirmable frames — indeterminate, rollback
                     self.state = "IDLE"
                 else:
                     arr = np.array(self._confirm, bool)

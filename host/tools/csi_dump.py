@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""RX 직결 RAW 덤프 → CSI buf 워드 통계 → 56SC 인덱스 표 확정 보조.
+"""RX direct RAW dump -> CSI buf word statistics -> 56SC index table finalization helper.
 
-브리지를 정지한 상태에서 RX COM에 직결:
+Connect directly to RX COM with bridge stopped:
   python csi_dump.py --port COM24 --count 300 --out dump.json
 
-출력: buf_len/sig_mode/first_word_invalid 분포, 워드별 평균 진폭·제로율 표,
-      진폭 기반 유효 워드 56개 제안과 펌웨어 잠정 테이블(SC_WORD_HTLTF) 비교.
+Output: buf_len/sig_mode/first_word_invalid distribution, per-word average amplitude/zero-rate table,
+amplitude-based valid word 56 proposal and comparison with firmware provisional table (SC_WORD_HTLTF).
 """
 import argparse
 import json
@@ -17,7 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from csi_host.framing import StreamParser  # noqa: E402
 
-# 펌웨어 잠정 테이블 (firmware/rx/main/sc_table.h와 동일 — 실측 비교 기준)
+# Firmware provisional table (same as firmware/rx/main/sc_table.h -- measured comparison baseline)
 SC_WORD_HTLTF = list(range(100, 128)) + list(range(65, 93))
 
 
@@ -50,7 +50,7 @@ def main():
                     print(f"[{args.port}] {val}")
 
     if not frames:
-        print("ERROR: rawframe 0개 — TX 가동/채널/SET_IDX 확인", file=sys.stderr)
+        print("ERROR: 0 rawframes -- check TX active/channel/SET_IDX", file=sys.stderr)
         sys.exit(1)
 
     buf_lens = Counter(f.buf_len for f in frames)
@@ -85,20 +85,20 @@ def main():
                 cols.append(f"{ww:4d}  {mean_amp[ww]:8.2f}  {zero_rate[ww]*100:5.1f}%")
         print("   ".join(cols))
 
-    # HT-LTF 구간(len>=256 프레임 기준 워드 64..127)에서 진폭 상위 56개 제안
+    # HT-LTF range (word 64..127 from frames with len>=256) top 56 by amplitude proposal
     proposal = None
     if max_words >= 128:
         ht = sorted(range(64, 128), key=lambda w: -mean_amp[w])[:56]
         proposal = sorted(ht)
         provisional = sorted(SC_WORD_HTLTF)
-        print(f"\n[제안] HT-LTF 구간 진폭 상위 56워드:\n  {proposal}")
+        print(f"\n[Proposal] HT-LTF range top 56 words by amplitude:\n  {proposal}")
         if proposal == provisional:
-            print("→ 펌웨어 잠정 테이블(SC_WORD_HTLTF)과 일치 — sc_table.h 확정 가능")
+            print("-> Matches firmware provisional table (SC_WORD_HTLTF) -- sc_table.h can be confirmed")
         else:
             only_fw = sorted(set(provisional) - set(proposal))
             only_meas = sorted(set(proposal) - set(provisional))
-            print(f"→ 잠정 테이블과 불일치! 테이블에만: {only_fw} / 실측에만: {only_meas}")
-            print("  ±27/28 가장자리(ltf_merge_en 거동)일 가능성 — 설계 §4.3 주의 ① 확인")
+            print(f"-> Mismatch! Words only in table: {only_fw} / only in measurement: {only_meas}")
+            print("  Possible edge behavior (ltf_merge_en) -- check design Section 4.3 note ①")
 
     Path(args.out).write_text(json.dumps({
         "frames": len(frames),
@@ -110,7 +110,7 @@ def main():
         "proposal_words": proposal,
         "provisional_table": SC_WORD_HTLTF,
     }, indent=1))
-    print(f"\n저장: {args.out} → 확정 시 configs/rf.yaml sc_table: confirmed + sc_table.h 갱신")
+    print(f"\nSaved: {args.out} -> when confirmed, update configs/rf.yaml sc_table: confirmed + sc_table.h")
 
 
 if __name__ == "__main__":

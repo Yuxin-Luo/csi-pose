@@ -23,7 +23,7 @@ static bool payload_at(const uint8_t *pl, uint16_t pln, int off, csil_payload_t 
     return out->magic == CSIL_PAYLOAD_MAGIC && out->tx_idx < 3;
 }
 
-/* WiFi 태스크 컨텍스트 — info/buf는 리턴 시 해제되므로 큐로 복사 */
+/* WiFi task context — info/buf are freed on return, so copy to queue */
 static void csi_cb(void *ctx, wifi_csi_info_t *info)
 {
     s_st.cb_total++;
@@ -37,7 +37,7 @@ static void csi_cb(void *ctx, wifi_csi_info_t *info)
         return;
     }
     if (s_st.pay_off < 0) {
-        /* 기본 오프셋 15 검사 → 실패 시 magic 스캔으로 잠금 */
+        /* Check default offset 15 → lock via magic scan if it fails */
         if (payload_at(pl, pln, CSIL_ESPNOW_HDR_LEN, &pay)) {
             s_st.pay_off = CSIL_ESPNOW_HDR_LEN;
         } else {
@@ -55,7 +55,7 @@ static void csi_cb(void *ctx, wifi_csi_info_t *info)
             }
         }
     } else if (!payload_at(pl, pln, s_st.pay_off, &pay)) {
-        s_st.magic_reject++; /* 타 트래픽의 CSI — 잠금 유지 */
+        s_st.magic_reject++; /* Other traffic's CSI — keep lock */
         return;
     }
 
@@ -63,9 +63,9 @@ static void csi_cb(void *ctx, wifi_csi_info_t *info)
     if (!s_mac_set[t]) {
         memcpy(s_mac[t], info->mac, 6);
         s_mac_set[t] = true;
-        s_mac_dirty[t] = true; /* NVS 기록은 프레이머 태스크에서 (flash 블로킹 회피) */
+        s_mac_dirty[t] = true; /* NVS write in framer task (avoid flash blocking) */
     } else if (memcmp(s_mac[t], info->mac, 6) != 0) {
-        s_st.mac_reject++; /* tx_idx 위장/중복 보드 검출 */
+        s_st.mac_reject++; /* tx_idx impersonation/duplicate board detected */
         return;
     }
 
@@ -90,14 +90,14 @@ esp_err_t csi_rx_init(QueueHandle_t q)
 {
     s_q = q;
     for (int i = 0; i < 3; i++)
-        s_mac_set[i] = csil_cfg_get_mac(i, s_mac[i]); /* NVS 핀 복원 */
+        s_mac_set[i] = csil_cfg_get_mac(i, s_mac[i]); /* NVS pin restore */
 
     ESP_ERROR_CHECK(csil_espnow_rx_init());
     wifi_csi_config_t cc = {
-        .lltf_en = true,        /* first_word_invalid를 버리는 LLTF 구간에 격리 */
+        .lltf_en = true,        /* Isolate in LLTF region that discards first_word_invalid */
         .htltf_en = true,
         .stbc_htltf2_en = true,
-        .ltf_merge_en = true,   /* 명시 ON — M0 실측 덤프로 ±27/28 거동 확정 */
+        .ltf_merge_en = true,   /* Explicitly ON — ±27/28 behavior confirmed by M0 measurement dump */
         .channel_filter_en = false,
         .manu_scale = false,
         .shift = 0,

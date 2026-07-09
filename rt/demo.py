@@ -1,7 +1,7 @@
-"""rt 데모 CLI — 리플레이/라이브 조립 + 성능 요약 JSON.
+"""rt demo CLI — replay/live assembly + performance summary JSON.
 
-절단 구동: 리플레이 = 데이터 시계(패킷 t_ns), 라이브 = 벽시계. 절단 경계 B는
-50ms 정수배(10ms 슬롯 위상 일치), (now − settle) ≥ B에서 B 윈도 절단."""
+Cutting driven by: replay = data clock (packet t_ns), live = wall clock. Cut boundary B is
+50ms integer multiple (10ms slot phase match), cut window at B where (now - settle) >= B."""
 import argparse
 import json
 import sys
@@ -28,7 +28,7 @@ from csi_rt.video import ReplayVideo                # noqa: E402
 
 TICK_NS = 50_000_000
 _WND = "rt"
-_STOP_KEYS = (27, ord("q"))        # ESC·q — 라이브 창 종료 키
+_STOP_KEYS = (27, ord("q"))        # ESC·q — live window quit key
 
 
 class Engine:
@@ -42,7 +42,7 @@ class Engine:
         self.fall = FallDetector(cfg["fall"], CANVAS_WH)
         self.frames_in = self.windows = self.valid_windows = 0
         self.dropped = self.alarms = 0
-        self.catchup_windows = 0       # 라이브 따라잡기 틱(e2e 미표본) 카운트
+        self.catchup_windows = 0       # Live catchup tick (e2e not sampled) count
         self.infer_ms, self.e2e_ms = [], []
         self._last = (None, None, False, "IDLE")     # xy, c, present, state
 
@@ -69,7 +69,7 @@ class Engine:
         else:
             self.dropped += 1
         if wall_ns is not None:
-            # e2e는 t̂ 기준 — 청크 배칭 지터(p50 ~55ms)만큼 보수(과대). 과소보고 없음 — 게이트 안전측
+            # e2e is based on t_hat — conservative due to chunk batching jitter (p50 ~55ms). No under-reporting — gate is safe
             self.e2e_ms.append((wall_ns - B_ns) / 1e6)
         hud = {"fps": self.windows / max(time.perf_counter() - self._wall0, 1e-9),
                "infer_ms": float(np.mean(self.infer_ms[-20:]) if
@@ -98,17 +98,17 @@ def _emit(engine, args, wall_s):
          "catchup_windows": engine.catchup_windows}
     Path(args.perf_out).write_text(json.dumps(d, indent=1, ensure_ascii=False),
                                    encoding="utf-8")
-    print(f"[rt] perf → {args.perf_out}: {d}")
+    print(f"[rt] perf -> {args.perf_out}: {d}")
     return d
 
 
 def _user_stop(key, visible):
-    """사용자 종료 요청 — ESC/q 키 또는 창 X 닫힘(visible<1)."""
+    """User termination request — ESC/q key or window X close (visible<1)."""
     return key in _STOP_KEYS or visible < 1
 
 
 def _show(args, frame, writer):
-    """표시/녹화 1틱. 반환 True = 사용자 종료 요청 — 호출측은 루프 탈출(마무리 경로 보존)."""
+    """Display/record 1 tick. Returns True = user termination request — caller exits loop (preserve cleanup path)."""
     if writer is not None:
         writer.write(frame)
     if args.headless:
@@ -116,10 +116,10 @@ def _show(args, frame, writer):
     import cv2
     try:
         visible = cv2.getWindowProperty(_WND, cv2.WND_PROP_VISIBLE)
-    except cv2.error:              # Qt: 마지막 창 X 닫힘 → guiReceiver 소멸 → 조회 자체가 throw
+    except cv2.error:              # Qt: last window X closed -> guiReceiver destroyed -> query itself throws
         return True
     if visible >= 1:
-        cv2.imshow(_WND, frame)    # X 닫힘(visible<1) 시 재생성 금지 — imshow가 창을 되살림
+        cv2.imshow(_WND, frame)    # Do not recreate on X close (visible<1) — imshow recreates window
     return _user_stop(cv2.waitKey(1) & 0xFF, visible)
 
 
@@ -132,7 +132,7 @@ def _make_writer(args, frame):
 
 
 def run(argv=None):
-    ap = argparse.ArgumentParser(description="rt 실시간/리플레이 데모 (M3)")
+    ap = argparse.ArgumentParser(description="rt realtime/replay demo (M3)")
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--replay", metavar="H5")
     src.add_argument("--live", action="store_true")
@@ -142,24 +142,24 @@ def run(argv=None):
     ap.add_argument("--video", metavar="MP4")
     ap.add_argument("--pairing", default=str(_HERE.parent / "configs" / "pairing.json"))
     ap.add_argument("--speed", type=float, default=None)
-    ap.add_argument("--fast", action="store_true", help="리플레이 무페이싱(테스트)")
+    ap.add_argument("--fast", action="store_true", help="Replay without phasing (test)")
     ap.add_argument("--mqtt-host")
     ap.add_argument("--save", metavar="MP4")
     ap.add_argument("--headless", action="store_true")
     ap.add_argument("--perf-out", default=str(_HERE.parent / "host" / "logs"
                                               / "rt_perf.json"))
     ap.add_argument("--duration", type=float, default=0.0,
-                    help="라이브 실행 시간(s, 0=무한)")
+                    help="Live run time (s, 0=infinite)")
     args = ap.parse_args(argv)
     if args.live and args.fast:
-        ap.error("--fast는 리플레이 전용")
+        ap.error("--fast is replay-only")
     if args.fast and args.speed is not None:
-        ap.error("--speed는 --fast와 동시 지정 불가")
+        ap.error("--speed cannot be used with --fast")
     if not args.random_weights and not args.ckpt:
-        ap.error("--ckpt 필요 (M2 전 파이프 스모크는 --random-weights)")  # rc 2
+        ap.error("--ckpt required (use --random-weights for M2 pre-pipe smoke)")  # rc 2
     if args.video and args.live:
-        raise SystemExit("--video 라이브: cam jpg 토픽 미발행 — 캔버스 모드 사용"
-                         " (스펙 §오버레이)")
+        raise SystemExit("--video with live: cam jpg topic not published — use canvas mode "
+                         "(spec §overlay)")
 
     cfg = load_rt_config(args.config)
     est = PoseEstimator(args.ckpt, random_weights=args.random_weights)
@@ -169,7 +169,7 @@ def run(argv=None):
     writer, wall0 = None, time.perf_counter()
     if not args.headless:
         import cv2
-        cv2.namedWindow(_WND)      # 첫 틱 전 생성 — getWindowProperty 기반 X 감지 전제
+        cv2.namedWindow(_WND)      # Create before first tick —的前提 getWindowProperty-based X detection
 
     if args.replay:
         source = ReplaySource(args.replay,
@@ -201,9 +201,9 @@ def run(argv=None):
                         B = (pkt.t_ns // TICK_NS + 2) * TICK_NS
                 now = time.time_ns()
                 while not stop and B is not None and now - settle_ns >= B:
-                    current = (now - settle_ns) < B + TICK_NS   # 마지막(현재) 틱만 e2e 표본
+                    current = (now - settle_ns) < B + TICK_NS   # Only last (current) tick is e2e sampled
                     if not current:
-                        engine.catchup_windows += 1             # stale 틱 — e2e 미표본(p95 보호)
+                        engine.catchup_windows += 1             # stale tick — e2e not sampled (p95 protection)
                     frame = engine.tick(B, wall_ns=time.time_ns() if current else None)
                     if writer is None:
                         writer = _make_writer(args, frame)
@@ -224,7 +224,7 @@ def run(argv=None):
 if __name__ == "__main__":
     try:
         sys.exit(run())
-    except SystemExit as e:                          # 메시지형 fail-loud → rc 2 통일
+    except SystemExit as e:                          # Message-style fail-loud -> unified rc 2
         if isinstance(e.code, str):
             print(e.code, file=sys.stderr)
             sys.exit(2)
