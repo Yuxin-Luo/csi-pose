@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  参考资料登记表（按 Agent Rules 第 7 条 / csi-pose/CLAUDE.md §8.3）
+  维护者：Claude
+  最后更新：2026-07-10 12:30（新增 r021–r022，对应调试 04 复测通过；r014–r020 完整保留）
+  范围：仅登记本会话实际读到的 csi-pose 源码 + 系统层 SDK 文件 — 无外部链接
+  字段：
+    id          唯一编号
+    title       文件或模块名
+    type        repo | paper | doc | dataset | tool | user-code
+    url         原始链接（本会话全部为本地源码，url 留空 + local_path 必填）
+    status      active | archived | contact-required | 404
+    trust       high | medium | low
+    used_in     被哪些 dev_doc 引用
+    notes       关键引用点（行号或符号）
+-->
+<references>
+  <!-- ======== 上层入口（保留 r001–r013） ======== -->
+  <ref id="r001">
+    <title>host/recorder/recorder.py — 实时会话记录器</title>
+    <type>user-code</type>
+    <url></url>
+    <local_path>ReferenceCode/Opensourse/csi-pose/host/recorder/recorder.py</local_path>
+    <status>active</status>
+    <trust>high</trust>
+    <used_in>1-serial-sync-architecture</used_in>
+    <notes>MQTT 订阅 csi/# 与 cam/meta；第 67-93 行主循环 + 错误标志</notes>
+  </ref>
+  <ref id="r002">
+    <title>host/csi_pipe/mqtt_recorder.py — RecorderCore</title>
+    <type>user-code</type>
+    <url></url>
+    <local_path>ReferenceCode/Opensourse/csi-pose/host/csi_pipe/mqtt_recorder.py</local_path>
+    <status>active</status>
+    <trust>high</trust>
+    <used_in>1-serial-sync-architecture</used_in>
+    <notes>SUBSCRIPTIONS = [("csi/#", 0), ("cam/meta", 0)]；_on_csi / _on_cam 分别解两条流</notes>
+  </ref>
+  <ref id="r003">
+    <title>host/csi_pipe/store.py — SessionWriter / SessionReader</title>
+    <type>user-code</type>
+    <url></url>
+    <local_path>ReferenceCode/Opensourse/csi-pose/host/csi_pipe/store.py</local_path>
+    <status>active</status>
+    <trust>high</trust>
+    <used_in>1-serial-sync-architecture</used_in>
+    <notes>/links/{rx}{tx} + /video 双树结构；append_video 接收 t_ns + frame_idx</notes>
+  </ref>
+  <ref id="r004">
+    <title>host/csi_pipe/clockfit.py — BoardClockModel + 下凸包拟合</title>
+    <type>user-code</type>
+    <url></url>
+    <local_path>ReferenceCode/Opensourse/csi-pose/host/csi_pipe/clockfit.py</local_path>
+    <status>active</status>
+    <trust>high</trust>
+    <used_in>1-serial-sync-architecture</used_in>
+    <notes>fit_board(esp_us, t_ns, boot_id) 每板独立拟合；下凸包 = 无偏时钟线；wrap_continuity 验单板 u32 wrap</notes>
+  </ref>
+  <ref id="r005">
+    <title>host/csi_pipe/align.py — 100Hz 公共网格重采样</title>
+    <type>user-code</type>
+    <url></url>
+    <local_path>ReferenceCode/Opensourse/csi-pose/host/csi_pipe/align.py</local_path>
+    <status>active</status>
+    <trust>high</trust>
+    <used_in>1-serial-sync-architecture</used_in>
+    <notes>grid_bounds 取交集；grid_block 每条 link 独立线性插值；WIN=5；STEP_NS=10_000_000</notes>
+  </ref>
+  <ref id="r006">
+    <title>host/csi_pipe/samples.py — §5.2 build 编排</title>
+    <type>user-code</type>
+    <url></url>
+    <local_path>ReferenceCode/Opensourse/csi-pose/host/csi_pipe/samples.py</local_path>
+    <status>active</status>
+    <trust>high</trust>
+    <used_in>1-serial-sync-architecture</used_in>
+    <notes>L162-166 显式注释："보드(rx)별 클록핏 — 같은 보드의 3링크는 같은 클록"——按 RX 板拟合，同板 3-link 共享一个模型</notes>
+  </ref>
+  <ref id="r007">
+    <title>host/csi_pipe/align_verify.py — 对齐分解验证</title>
+    <type>user-code</type>
+    <url></url>
+    <local_path>ReferenceCode/Opensourse/csi-pose/host/csi_pipe/align_verify.py</local_path>
+    <status>active</status>
+    <trust>high</trust>
+    <used_in>1-serial-sync-architecture</used_in>
+    <notes>detect_gaps 按板检 gap 后聚类；csi_absolute_offsets 验与外部 cmd 时戳漂移——不验跨板一致性</notes>
+  </ref>
+  <ref id="r008">
+    <title>host/csi_host/unwrap.py — TimeUnwrapper</title>
+    <type>user-code</type>
+    <url></url>
+    <local_path>ReferenceCode/Opensourse/csi-pose/host/csi_host/unwrap.py</local_path>
+    <status>active</status>
+    <trust>high</trust>
+    <used_in>1-serial-sync-architecture</used_in>
+    <notes>esp_timer u32 单调化（71.58min wrap + boot_id 重启 epoch 重置）— 完全是每板独立的状态机</notes>
+  </ref>
+  <ref id="r009">
+    <title>teacher/teacher.py — 教师标签 CLI</title>
+    <type>user-code</type>
+    <url></url>
+    <local_path>ReferenceCode/Opensourse/csi-pose/teacher/teacher.py</local_path>
+    <status>active</status>
+    <trust>high</trust>
+    <used_in>1-serial-sync-architecture</used_in>
+    <notes>iter_frames 单纯 cv2.VideoCapture.read() 顺序迭代；不取时间戳</notes>
+  </ref>
+  <ref id="r010">
+    <title>teacher/csi_teacher/labels.py — 帧状态 + HDF5 写入</title>
+    <type>user-code</type>
+    <url></url>
+    <local_path>ReferenceCode/Opensourse/csi-pose/teacher/csi_teacher/labels.py</local_path>
+    <status>active</status>
+    <trust>high</trust>
+    <used_in>1-serial-sync-architecture</used_in>
+    <notes>L42 "고정 카메라 가정"；L88-93 显式允许 /video {V} &lt; mp4 {F}；缺人/多人 → STATUS_* → pose18 写入 NaN</notes>
+  </ref>
+  <ref id="r011">
+    <title>firmware/tx/ + firmware/rx/ + firmware/components/csi_link/</title>
+    <type>user-code</type>
+    <url></url>
+    <local_path>ReferenceCode/Opensourse/csi-pose/firmware/tx/, firmware/rx/, firmware/components/csi_link/</local_path>
+    <status>active</status>
+    <trust>high</trust>
+    <used_in>1-serial-sync-architecture</used_in>
+    <notes>无 GPIO 触发线 / PPS / 共享时钟输出；板间唯一物理关系是 ESP-NOW beacon 广播</notes>
+  </ref>
+  <ref id="r012">
+    <title>csi-pose/CLAUDE.md — 本目录 Agent 行为规范</title>
+    <type>user-code</type>
+    <url></url>
+    <local_path>ReferenceCode/Opensourse/csi-pose/CLAUDE.md</local_path>
+    <status>active</status>
+    <trust>high</trust>
+    <used_in>1-serial-sync-architecture</used_in>
+    <notes>§0 第一性原理 / §9.4 基线会话复现约束 / §12 状态速查</notes>
+  </ref>
+  <ref id="r013">
+    <title>README.md (csi-pose) — 项目总览</title>
+    <type>user-code</type>
+    <url></url>
+    <local_path>ReferenceCode/Opensourse/csi-pose/README.md</local_path>
+    <status>active</status>
+    <trust>high</trust>
+    <used_in>1-serial-sync-architecture</used_in>
+    <notes>跌倒基线指标 10/11 召回 + 2 FP 来自 fall-demo-01 单会话</notes>
+  </ref>
+
+  <!-- ======== 调试 04：RX 直烧版 bring-up 链（r021–r022 在此之上，按时间顺序） ======== -->
+  <ref id="r021">
+    <title>logs/rx0-20260710-122854.rawlog — §2.5 实测产物</title>
+    <type>user-code</type>
+    <url></url>
+    <local_path>ReferenceCode/Opensourse/csi-pose/logs/rx0-20260710-122854.rawlog</local_path>
+    <status>active</status>
+    <trust>high</trust>
+    <used_in>4-rx-firmware-bringup-debug</used_in>
+    <notes>1.17 MB / 9014 个 CSI 帧（magic 0xC51D）/ CRC=0 / frames=8993 @ bridge；文件是二进制格式（CSIRAW01 header + u64/u16/var recs），文本编辑器看是"乱码"是正常现象</notes>
+  </ref>
+  <ref id="r022">
+    <title>host/bridge/bridge.py — bridge JSON 输出契约</title>
+    <type>user-code</type>
+    <url></url>
+    <local_path>ReferenceCode/Opensourse/csi-pose/host/bridge/bridge.py</local_path>
+    <status>active</status>
+    <trust>high</trust>
+    <used_in>4-rx-firmware-bringup-debug</used_in>
+    <notes>JSON 字段：frames（CSI 总帧）/ rawframes（裸字符）/ texts（ASCII banner）/ crc_errors / junk_bytes / wraps / reboots / links.{0,1,2}.{rx,lost,resets,loss} / reconnects；loss = lost/(rx+lost) 是 cumulative 收敛指标</notes>
+  </ref>
+  <ref id="r014">
+    <title>firmware/direct_download/direct_rx/sdkconfig（已修改）</title>
+    <type>user-code</type>
+    <url></url>
+    <local_path>ReferenceCode/Opensourse/csi-pose/firmware/direct_download/direct_rx/sdkconfig</local_path>
+    <status>active</status>
+    <trust>high</trust>
+    <used_in>4-rx-firmware-bringup-debug</used_in>
+    <notes>L1270 切换主 console 到 USB_SERIAL_JTAG；L1337 启用 CONFIG_ESP_WIFI_CSI_ENABLED；L2227-2228 切换 csi_link 后端到 USB_JTAG</notes>
+  </ref>
+  <ref id="r015">
+    <title>firmware/direct_download/direct_rx/sdkconfig.defaults（已修改）</title>
+    <type>user-code</type>
+    <url></url>
+    <local_path>ReferenceCode/Opensourse/csi-pose/firmware/direct_download/direct_rx/sdkconfig.defaults</local_path>
+    <status>active</status>
+    <trust>high</trust>
+    <used_in>4-rx-firmware-bringup-debug</used_in>
+    <notes>L3 切 console；L6 CSI enable；L7 csi_link 后端 — 全部 y</notes>
+  </ref>
+  <ref id="r016">
+    <title>csi_link/serial_uart0.c — UART0 串口后端</title>
+    <type>user-code</type>
+    <url></url>
+    <local_path>ReferenceCode/Opensourse/csi-pose/firmware/components/csi_link/src/serial_uart0.c</local_path>
+    <status>active</status>
+    <trust>high</trust>
+    <used_in>4-rx-firmware-bringup-debug</used_in>
+    <notes>L9 PORT=UART_NUM_0；L22 uart_driver_install；受 CONFIG_CSI_LINK_SERIAL_UART0 条件编译</notes>
+  </ref>
+  <ref id="r017">
+    <title>csi_link/serial_usb_jtag.c — USB Serial/JTAG 串口后端</title>
+    <type>user-code</type>
+    <url></url>
+    <local_path>ReferenceCode/Opensourse/csi-pose/firmware/components/csi_link/src/serial_usb_jtag.c</local_path>
+    <status>active</status>
+    <trust>high</trust>
+    <used_in>4-rx-firmware-bringup-debug</used_in>
+    <notes>L17 usb_serial_jtag_driver_install；L21 write via usb_serial_jtag_write_bytes；受 CONFIG_CSI_LINK_SERIAL_USB_JTAG 条件编译；与 r016 互斥</notes>
+  </ref>
+  <ref id="r018">
+    <title>ESP-IDF v5.5 Kconfig — ESP_WIFI_CSI_ENABLED 定义</title>
+    <type>doc</type>
+    <url></url>
+    <local_path>/home/ruo/Desktop/LYX/USTB-SONY/ESP_IDF/esp-idf/components/esp_wifi/Kconfig</local_path>
+    <status>active</status>
+    <trust>high</trust>
+    <used_in>4-rx-firmware-bringup-debug</used_in>
+    <notes>"config ESP_WIFI_CSI_ENABLED" — bool 类型、default n、depends on SOC_WIFI_CSI_SUPPORT；这是 SDKconfig 启用 CSI 的唯一入口</notes>
+  </ref>
+  <ref id="r019">
+    <title>ESP-IDF v5.5 Kconfig — console UART vs USB</title>
+    <type>doc</type>
+    <url></url>
+    <local_path>/home/ruo/Desktop/LYX/USTB-SONY/ESP_IDF/esp-idf/components/esp_common/Kconfig (or equivalent console Kconfig)</local_path>
+    <status>active</status>
+    <trust>high</trust>
+    <used_in>4-rx-firmware-bringup-debug</used_in>
+    <notes>CONFIG_ESP_CONSOLE_UART_DEFAULT/UART_CUSTOM/USB_CDC/USB_SERIAL_JTAG 四选一；UART0 走 GPIO 透传，USB_* 直出 /dev/ttyACM*</notes>
+  </ref>
+  <ref id="r020">
+    <title>ESP-IDF v6.0.1 wifi_types_native.h — wifi_csi_config_t 字段对照</title>
+    <type>doc</type>
+    <url></url>
+    <local_path>/home/ruo/esp/esp-idf-v6.0.1/components/esp_wifi/include/local/esp_wifi_types_native.h</local_path>
+    <status>archived</status>
+    <trust>medium</trust>
+    <used_in>4-rx-firmware-bringup-debug</used_in>
+    <notes>决定性证据：v6.0 struct 字段（lltf_en/htltf_en/stbc_htltf2_en/ltf_merge_en/channel_filter_en/manu_scale/shift/dump_ack_en）几乎不变 → 排除"IDF v6 struct 不兼容"假设。最终 root cause 在 SDKconfig 启用位</notes>
+  </ref>
+</references>

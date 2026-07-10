@@ -6,11 +6,12 @@ __pycache__/
 venv/
 
 # ESP-IDF — sdkconfig는 생성 파일 (sdkconfig.defaults만 커밋)
-firmware/*/build/
-firmware/*/sdkconfig
-firmware/*/sdkconfig.old
-firmware/*/dependencies.lock
-firmware/*/managed_components/
+# **/ 는任意深度的 build/sdkconfig 포함 (예: firmware/direct_download/*/build/)
+firmware/**/build/
+firmware/**/sdkconfig
+firmware/**/sdkconfig.old
+firmware/**/dependencies.lock
+firmware/**/managed_components/
 
 # 로컬 환경 전용 설정 — configs/*.example.yaml 을 복사해 작성
 configs/boards.yaml
@@ -31,6 +32,7 @@ host/sessions/
 host/logs/
 weights/
 runs/
+data/
 
 # OS / IDE / 로컬 도구 상태
 .vscode/
