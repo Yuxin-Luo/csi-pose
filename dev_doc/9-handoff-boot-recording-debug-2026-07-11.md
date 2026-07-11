@@ -1,17 +1,28 @@
 # 交接 09 — boot 录制系统 debug + handoff
 
-**状态**：🔴 **代码已停手，等用户回答 4 个关键问题后继续**
-**时间**：2026-07-11 18:35
-**目的**：把当前状态、决策、bug 假设、未决问题**完整交接**给下一个 AI 或本会话后续轮次
-**依据**：用户 2026-07-11 18:30 反馈（"幻觉严重、先梳理现状、必要时写 handoff"）
+**状态**：✅ **历史 handoff 已归档**——本文件记录 v1-v5 死因。
+**时间**：2026-07-11 18:35（创建）→ 2026-07-11 22:20（更新）
+**后续**：v6 EOFError 真根因已修（commit `91d09d3`），当前主线见 dev_doc/10。
+**依据**：用户 2026-07-11 18:30 反馈（"幻觉严重、先梳理现状、必要时写 handoff"），
+2026-07-11 22:00 反馈（"目前已经成功弹窗录制了，但需要 TEST mode"）
 
 ---
 
-## 1. 现状一句话
+## 1. 现状一句话 (历史 — 已被 v6 commit 91d09d3 解)
 
-`./host/boot_recording.sh` 主进程在 polling 循环**第一轮或第二轮内 silent 死亡**，但 3 个 bridge 子进程作为孤儿**继续跑了 4+ 分钟**，写满 116k CSI 帧（远超 280 阈值）到 rawlog。**boot 主进程的"看不到 polling 输出"是因为它在 echo 那行前就死了**。
+`./host/boot_recording.sh` 主进程在 polling 循环**第一轮或第二轮内 silent 死亡** (v1-v3)；
+到达 polling 之后在 cam/recorder 启动后又被 EOFError kill (v5/v6)。
 
-**Python 端**（cam_capture / recorder / plan.py）**未充分验证**——boot 没跑到 cam+recorder 启动那步就死了。
+**v6 真根因**：cam/recorder `input()` 在 `&` 后台进程 stdin 非 TTY 时 raise `EOFError`；
+`set -e` 在 `wait` 返回非零时让主进程退出。Fix 见 commit `91d09d3`。
+
+**v7 演进**：commit `5c8f722` 加 MODE 参数支持 test smoke + norm 训练两套独立流程。
+**当前建议**：从 `./host/boot_recording.sh test s01-smoke` 60s 跑通验证后，再切 norm。
+详见 dev_doc/10。
+
+---
+
+## (旧 §1 - 保留作 trace)
 
 ---
 
