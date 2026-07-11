@@ -2,6 +2,7 @@
 # boot_recording.sh — orchestrate 5 processes for one csi-pose recording.
 # Usage: ./host/boot_recording.sh [SESSION_NAME]
 set -euo pipefail
+set -x   # DEBUG: print every command before execution
 
 SESSION="${1:-s01-r1}"
 PYTHON="/home/ruo/anaconda3/envs/dac_dev/bin/python"
@@ -13,6 +14,9 @@ DURATION=580
 PLAN="1:empty_in:60,2:pos1_set1:40,3:pos2_set1:40,4:pos3_set1:40,5:pos1_set2:40,6:pos2_set2:40,7:pos3_set2:40,8:pos1_set3:40,9:pos2_set3:40,10:pos3_set3:40,11:sit:40,12:lie_supine:60,13:empty_out:60"
 
 mkdir -p "$LOGDIR" data
+# DEBUG: 把 set -x trace 写到文件
+exec 2>>"$LOGDIR/boot.trace"
+echo "=== boot trace start $(date) ===" >&2
 
 # ① 预检
 command -v mosquitto >/dev/null || { echo "❌ mosquitto not installed"; exit 1; }
@@ -39,10 +43,17 @@ get_frames() {
     grep "\[rx$1\]" "$LOGDIR/live.log" 2>/dev/null | grep -oP '"frames":\s*\K\d+' | tail -1
 }
 while true; do
+    echo "[poll] iteration $(date +%H:%M:%S) ready=$ready"
     ready=0
-    f0=$(get_frames 0); [ "${f0:-0}" -gt 280 ] && ready=$((ready + 1)) || true
-    f1=$(get_frames 1); [ "${f1:-0}" -gt 280 ] && ready=$((ready + 1)) || true
-    f2=$(get_frames 2); [ "${f2:-0}" -gt 280 ] && ready=$((ready + 1)) || true
+    f0=$(get_frames 0)
+    echo "[poll] f0='$f0'"
+    [ "${f0:-0}" -gt 280 ] && ready=$((ready + 1)) || true
+    f1=$(get_frames 1)
+    echo "[poll] f1='$f1'"
+    [ "${f1:-0}" -gt 280 ] && ready=$((ready + 1)) || true
+    f2=$(get_frames 2)
+    echo "[poll] f2='$f2'"
+    [ "${f2:-0}" -gt 280 ] && ready=$((ready + 1)) || true
     echo "  [$(date +%H:%M:%S)] ready=$ready/3  frames: rx0=${f0:-0} rx1=${f1:-0} rx2=${f2:-0}"
     if [ "$ready" -eq 3 ]; then break; fi
     sleep 2
