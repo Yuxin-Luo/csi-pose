@@ -104,10 +104,6 @@ def main():
     # ② CamCore
     core = CamCore(sink)
 
-    # ②.5 Gate: wait for Enter before opening camera (remote control friendly)
-    if args.start_on_key:
-        input("[gate] Press Enter to start recording (cam+csi)...")
-
     # ③ VideoCapture open -- default MSMF (measured 2026-06-11: DSHOW gets stuck at 720p YUY2 10fps
     #    due to MJPG rejection, MSMF negotiates 30fps). Camera differences handled by --backend.
     backends = {"msmf": "CAP_MSMF", "dshow": "CAP_DSHOW", "any": None}
@@ -166,6 +162,16 @@ def main():
             exit_code = 1
             return
 
+        # ②.5 Preview window + Gate (Q2.A: see cam preview before Enter; Q1.3: press Enter to start)
+        cv2.namedWindow("cam", cv2.WINDOW_NORMAL)
+        preview = first_frame.copy()
+        cv2.putText(preview, "PRESS ENTER TO START", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 255), 3)
+        cv2.putText(preview, "(make sure you're in frame!)", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+        cv2.imshow("cam", preview)
+        cv2.waitKey(100)
+        if args.start_on_key:
+            input("[gate] Press Enter to start recording (cam+csi)...")
+
         # Create VideoWriter with actual shape
         h_frame, w_frame = first_frame.shape[:2]
         fps_write = fps_actual if fps_actual > 0 else args.fps  # mp4 fps is playback reference -- cam/meta t_ns is the real timing source
@@ -209,6 +215,8 @@ def main():
                         draw_overlay(frame, plan_state, elapsed)
                 core.handle_frame(t)
                 writer.write(frame)
+                cv2.imshow("cam", frame)
+                cv2.waitKey(1)
             else:
                 consec = core.note_drop()
                 if consec >= 30:

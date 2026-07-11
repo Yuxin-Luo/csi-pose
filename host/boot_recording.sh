@@ -21,30 +21,30 @@ for p in 0 1 2; do [ -e "/dev/ttyACM$p" ] || { echo "❌ /dev/ttyACM$p missing";
 [ -e /dev/video0 ] || { echo "❌ /dev/video0 missing"; exit 1; }
 echo "✓ preflight OK (session=$SESSION, ts=$TS)"
 
-# ② 后台启 3 bridge
+# ② 后台启 3 bridge（tee 聚合：stderr → 终端 + live.log；polling 从 live.log 按 rx-id grep）
 BRIDGE_PIDS=()
+: > "$LOGDIR/live.log"        # truncate, 由 tee -a append
 for rx in 0 1 2; do
     "$PYTHON" host/bridge/bridge.py --port "/dev/ttyACM$rx" --rx-id "$rx" \
         --raw-dir logs --status-period 1.0 \
-        > "$LOGDIR/rx$rx.log" 2>&1 &
+        2>&1 | tee -a "$LOGDIR/live.log" >/dev/null &
     BRIDGE_PIDS+=($!)
 done
 
 # ③ 轮询等所有 bridge frames > 280
-trap 'kill ${BRIDGE_PIDS[@]:-} 2>/dev/null || true; exit 1' INT TERM
+trap 'kill ${BRIDGE_PIDS[@]:-} ${CAM_PID:-} ${REC_PID:-} 2>/dev/null || true; exit 1' INT TERM
 echo "Waiting for 3 bridges (frames > 280)..."
+# helper: 从 live.log 读第 rx 个 bridge 的最新 frames (按 [rx$rx] 前缀 grep)
+get_frames() {
+    grep "\[rx$1\]" "$LOGDIR/live.log" 2>/dev/null | grep -oP '"frames":\s*\K\d+' | tail -1
+}
 while true; do
     ready=0
-    for rx in 0 1 2; do
-        f=$(grep -oP '"frames":\s*\K\d+' "$LOGDIR/rx$rx.log" 2>/dev/null | tail -1)
-        [ "${f:-0}" -gt 280 ] && ready=$((ready + 1))
-    done
-    # 显示当前 frames (即使 ready=0 也能看见进度)
-    f0=$(grep -oP '"frames":\s*\K\d+' "$LOGDIR/rx0.log" 2>/dev/null | tail -1)
-    f1=$(grep -oP '"frames":\s*\K\d+' "$LOGDIR/rx1.log" 2>/dev/null | tail -1)
-    f2=$(grep -oP '"frames":\s*\K\d+' "$LOGDIR/rx2.log" 2>/dev/null | tail -1)
+    f0=$(get_frames 0); [ "${f0:-0}" -gt 280 ] && ready=$((ready + 1)) || true
+    f1=$(get_frames 1); [ "${f1:-0}" -gt 280 ] && ready=$((ready + 1)) || true
+    f2=$(get_frames 2); [ "${f2:-0}" -gt 280 ] && ready=$((ready + 1)) || true
     echo "  [$(date +%H:%M:%S)] ready=$ready/3  frames: rx0=${f0:-0} rx1=${f1:-0} rx2=${f2:-0}"
-    [ "$ready" -eq 3 ] && break
+    if [ "$ready" -eq 3 ]; then break; fi
     sleep 2
 done
 echo "✓ 3 bridges ready"
