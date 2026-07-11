@@ -39,6 +39,11 @@ while true; do
         f=$(grep -oP '"frames":\s*\K\d+' "$LOGDIR/rx$rx.log" 2>/dev/null | tail -1)
         [ "${f:-0}" -gt 280 ] && ready=$((ready + 1))
     done
+    # 显示当前 frames (即使 ready=0 也能看见进度)
+    f0=$(grep -oP '"frames":\s*\K\d+' "$LOGDIR/rx0.log" 2>/dev/null | tail -1)
+    f1=$(grep -oP '"frames":\s*\K\d+' "$LOGDIR/rx1.log" 2>/dev/null | tail -1)
+    f2=$(grep -oP '"frames":\s*\K\d+' "$LOGDIR/rx2.log" 2>/dev/null | tail -1)
+    echo "  [$(date +%H:%M:%S)] ready=$ready/3  frames: rx0=${f0:-0} rx1=${f1:-0} rx2=${f2:-0}"
     [ "$ready" -eq 3 ] && break
     sleep 2
 done
