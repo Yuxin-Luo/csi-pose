@@ -15,6 +15,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # host/
 from csi_host.cam_core import CamCore  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # host/capture/
+from plan import parse_plan, PlanState, draw_overlay  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -79,10 +81,16 @@ def main():
     ap.add_argument("--session", required=True, help="Session label (part of filename)")
     ap.add_argument("--duration", type=float, default=None, help="Recording duration in seconds -- omit for Ctrl-C")
     ap.add_argument("--status-period", type=float, default=5.0)
+    ap.add_argument("--start-on-key", action="store_true", help="Wait for Enter before recording")
+    ap.add_argument("--plan", default=None, help='Plan string "1:label:60,2:label:40,..."')
+    ap.add_argument("--overlay", action="store_true", default=True, help="Draw segment overlay")
+    ap.add_argument("--no-overlay", dest="overlay", action="store_false")
     ap.add_argument("--mqtt-host", default="127.0.0.1")
     ap.add_argument("--mqtt-port", type=int, default=1883)
     ap.add_argument("--no-mqtt", action="store_true", help="Skip MQTT publish (mp4 only)")
     args = ap.parse_args()
+    plan_list = parse_plan(args.plan) if args.plan else []
+    plan_state = PlanState(plan_list) if plan_list else None
 
     import cv2  # cv2 imported here only -- tests don't import this file
 
@@ -95,6 +103,10 @@ def main():
 
     # ② CamCore
     core = CamCore(sink)
+
+    # ②.5 Gate: wait for Enter before opening camera (remote control friendly)
+    if args.start_on_key:
+        input("[gate] Press Enter to start recording (cam+csi)...")
 
     # ③ VideoCapture open -- default MSMF (measured 2026-06-11: DSHOW gets stuck at 720p YUY2 10fps
     #    due to MJPG rejection, MSMF negotiates 30fps). Camera differences handled by --backend.
@@ -185,6 +197,16 @@ def main():
             t = time.time_ns()  # Capture immediately after grab
 
             if ret:
+                if plan_state is not None:
+                    if plan_state.seg_start is None:
+                        plan_state.seg_start = time.monotonic()
+                    elapsed = time.monotonic() - plan_state.seg_start
+                    if plan_state.tick(time.monotonic()):
+                        print(f"[cam] segment {plan_state.cur_seg + 1}/{plan_state.total_segments} -> {plan_state.cur_label}", flush=True)
+                        plan_state.seg_start = time.monotonic()
+                        elapsed = 0.0
+                    if args.overlay:
+                        draw_overlay(frame, plan_state, elapsed)
                 core.handle_frame(t)
                 writer.write(frame)
             else:

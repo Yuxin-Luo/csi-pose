@@ -15,6 +15,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # host/
 from csi_pipe.mqtt_recorder import RecorderCore, wire_client  # noqa: E402
 from csi_pipe.store import SessionWriter  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "capture"))  # host/capture/
+from plan import parse_plan  # noqa: E402
 
 
 def main():
@@ -26,7 +28,10 @@ def main():
     ap.add_argument("--session", required=True, help="Session label (filename)")
     ap.add_argument("--duration", type=float, default=None, help="Seconds — omit for Ctrl-C")
     ap.add_argument("--status-period", type=float, default=5.0)
+    ap.add_argument("--start-on-key", action="store_true", help="Wait for Enter before recording")
+    ap.add_argument("--plan", default=None, help='Plan string (stderr log + HDF5 meta only)')
     args = ap.parse_args()
+    plan_list = parse_plan(args.plan) if args.plan else []
 
     import paho.mqtt.client as mqtt
 
@@ -64,6 +69,8 @@ def main():
     # missing subscriptions on first connection.
     wire_client(client, _on_message, log=lambda msg: print(msg, flush=True))
     client.loop_start()
+    if args.start_on_key:
+        input("[gate] Press Enter to start recording (recorder)...")
     print(f"[rec] Recording: {path}", flush=True)
 
     t0 = time.monotonic()
@@ -78,6 +85,17 @@ def main():
                 exit_code = 1
                 break
             now = time.monotonic()
+            if plan_list:
+                elapsed = now - t0
+                cum, new_seg_idx = 0, len(plan_list) - 1
+                for i, (_, _, d) in enumerate(plan_list):
+                    cum += d
+                    if elapsed < cum:
+                        new_seg_idx = i
+                        break
+                if not hasattr(main, "_last_seg") or main._last_seg != new_seg_idx:
+                    main._last_seg = new_seg_idx
+                    print(f"[rec] segment {new_seg_idx + 1}/{len(plan_list)} -> {plan_list[new_seg_idx][1]}", flush=True)
             if now - last >= args.status_period:
                 last = now
                 writer.flush()                      # Periodic flush (spec error handling)
@@ -87,6 +105,8 @@ def main():
     except KeyboardInterrupt:
         print("\n[rec] stopping", flush=True)
     finally:
+        if args.plan:
+            writer.set_meta("plan", args.plan)
         client.loop_stop()
         writer.set_meta("recorder_status", str(core.status()))
         writer.close()
