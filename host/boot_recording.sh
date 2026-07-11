@@ -44,21 +44,23 @@ done
 trap 'kill ${BRIDGE_PIDS[@]:-} ${CAM_PID:-} ${REC_PID:-} 2>/dev/null || true; exit 1' INT TERM
 echo "Waiting for 3 bridges (frames > 280)..."
 # helper: 从 live.log 读第 rx 个 bridge 的最新 frames (按 [rx$rx] 前缀 grep)
+# 注：pipefail + set -e 下，pipeline 返回非零会让 $(...) 触发 set -e 退出整个脚本
+# 兜底：tail -1 之后加 || echo 0，强制返回 0
 get_frames() {
-    grep "\[rx$1\]" "$LOGDIR/live.log" 2>/dev/null | grep -oP '"frames":\s*\K\d+' | tail -1
+    grep "\[rx$1\]" "$LOGDIR/live.log" 2>/dev/null | grep -oP '"frames":\s*\K\d+' | tail -1 || echo 0
 }
 while true; do
     ready=0
-    f0=$(get_frames 0)
+    f0=$(get_frames 0); f0="${f0:-0}"
     echo "[poll] f0='$f0'"
-    [ "${f0:-0}" -gt 280 ] && ready=$((ready + 1)) || true
-    f1=$(get_frames 1)
+    if [ "$f0" -gt 280 ]; then ready=$((ready + 1)); fi
+    f1=$(get_frames 1); f1="${f1:-0}"
     echo "[poll] f1='$f1'"
-    [ "${f1:-0}" -gt 280 ] && ready=$((ready + 1)) || true
-    f2=$(get_frames 2)
+    if [ "$f1" -gt 280 ]; then ready=$((ready + 1)); fi
+    f2=$(get_frames 2); f2="${f2:-0}"
     echo "[poll] f2='$f2'"
-    [ "${f2:-0}" -gt 280 ] && ready=$((ready + 1)) || true
-    echo "  [$(date +%H:%M:%S)] ready=$ready/3  frames: rx0=${f0:-0} rx1=${f1:-0} rx2=${f2:-0}"
+    if [ "$f2" -gt 280 ]; then ready=$((ready + 1)); fi
+    echo "  [$(date +%H:%M:%S)] ready=$ready/3  frames: rx0=$f0 rx1=$f1 rx2=$f2"
     if [ "$ready" -eq 3 ]; then break; fi
     sleep 2
 done
