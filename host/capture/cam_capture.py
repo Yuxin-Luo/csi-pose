@@ -74,8 +74,10 @@ def main():
     ap.add_argument("--camera", type=int, default=0, help="Camera index (default 0)")
     ap.add_argument("--backend", choices=["msmf", "dshow", "any"], default="msmf",
                     help="Capture backend (default msmf -- 720p 30fps negotiation measured)")
-    ap.add_argument("--width", type=int, default=1280)
-    ap.add_argument("--height", type=int, default=720)
+    ap.add_argument("--width", type=int, default=640,
+                    help="Capture width (USB2 bandwidth capped — 640 tested at 30fps, 720p capped at 15)")
+    ap.add_argument("--height", type=int, default=360,
+                    help="Capture height (USB2 bandwidth capped — 360 tested at 30fps, 720p capped at 15)")
     ap.add_argument("--fps", type=float, default=30.0)
     ap.add_argument("--out", default="sessions", help="Output directory")
     ap.add_argument("--session", required=True, help="Session label (part of filename)")

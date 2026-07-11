@@ -113,6 +113,7 @@ echo "✓ 3 bridges ready"
 # cam/recorder --out 走 $OUT_DIR，确保 test/norm 各自落子目录
 "$PYTHON" host/capture/cam_capture.py \
     --camera 0 --backend any --out "$OUT_DIR" --session "$SESSION" --duration "$DURATION" \
+    --width 640 --height 360 --fps 30 \
     --plan "$PLAN" --start-on-key --overlay --status-period 1.0 \
     > "$LOGDIR/cam.log" 2>&1 &
 CAM_PID=$!
