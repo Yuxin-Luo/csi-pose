@@ -70,7 +70,26 @@ def main():
     wire_client(client, _on_message, log=lambda msg: print(msg, flush=True))
     client.loop_start()
     if args.start_on_key:
-        input("[gate] Press Enter to start recording (recorder)...")
+        # &-launched subprocess stdin may not be a TTY → input() raises EOFError.
+        # Try stdin if it's a real TTY; otherwise wait for sentinel file
+        # (boot_recording.sh writes $SESSION.gate before the cam key is needed).
+        gate_flag = Path(args.out) / f".{args.session}.gate"
+        if sys.stdin.isatty():
+            print("[rec] Press Enter to start recording (recorder stdin)...", flush=True)
+            try:
+                sys.stdin.readline()
+            except (EOFError, KeyboardInterrupt):
+                print(f"[rec] stdin closed, waiting for sentinel {gate_flag}...",
+                      flush=True)
+                while not gate_flag.exists():
+                    time.sleep(0.2)
+                gate_flag.unlink(missing_ok=True)
+        else:
+            print(f"[rec] stdin not a TTY, waiting for sentinel {gate_flag}...",
+                  flush=True)
+            while not gate_flag.exists():
+                time.sleep(0.2)
+            gate_flag.unlink(missing_ok=True)
     print(f"[rec] Recording: {path}", flush=True)
 
     t0 = time.monotonic()

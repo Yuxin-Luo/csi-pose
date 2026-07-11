@@ -162,15 +162,30 @@ def main():
             exit_code = 1
             return
 
-        # ②.5 Preview window + Gate (Q2.A: see cam preview before Enter; Q1.3: press Enter to start)
+        # ②.5 Preview window + Gate
+        # Use cv2.waitKey (GUI key) instead of input() — &-launched subprocess stdin
+        # can be closed/EOF on this Linux setup (Qt event loop grabs stdin in cv2.waitKey),
+        # so input() raises EOFError immediately. cv2.waitKey is independent of stdin.
         cv2.namedWindow("cam", cv2.WINDOW_NORMAL)
         preview = first_frame.copy()
-        cv2.putText(preview, "PRESS ENTER TO START", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 255), 3)
+        cv2.putText(preview, "PRESS ANY KEY TO START", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 255), 3)
         cv2.putText(preview, "(make sure you're in frame!)", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+        cv2.putText(preview, "(or Ctrl-C to abort)", (50, 200), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 200), 2)
         cv2.imshow("cam", preview)
         cv2.waitKey(100)
         if args.start_on_key:
-            input("[gate] Press Enter to start recording (cam+csi)...")
+            print("[cam] Press ANY KEY in the cam preview window to start recording...",
+                  flush=True)
+            while True:
+                k = cv2.waitKey(0) & 0xFF
+                if k != 0xFF:                        # 0xFF = no key pressed (window not focused)
+                    print(f"[cam] Got key 0x{k:02x}, starting recording", flush=True)
+                    # Touch sentinel file so recorder (waiting on it) unblocks in sync
+                    # (path is fixed: same --out + sentinel name as recorder.py expects)
+                    gate_flag = Path(args.out) / f".{args.session}.gate"
+                    gate_flag.parent.mkdir(parents=True, exist_ok=True)
+                    gate_flag.touch()
+                    break
 
         # Create VideoWriter with actual shape
         h_frame, w_frame = first_frame.shape[:2]

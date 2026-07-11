@@ -2,7 +2,6 @@
 # boot_recording.sh — orchestrate 5 processes for one csi-pose recording.
 # Usage: ./host/boot_recording.sh [SESSION_NAME]
 set -euo pipefail
-set -x   # DEBUG: print every command before execution
 
 # Project root = parent of where this script lives (host/ -> project root)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,9 +18,9 @@ DURATION=580
 PLAN="1:empty_in:60,2:pos1_set1:40,3:pos2_set1:40,4:pos3_set1:40,5:pos1_set2:40,6:pos2_set2:40,7:pos3_set2:40,8:pos1_set3:40,9:pos2_set3:40,10:pos3_set3:40,11:sit:40,12:lie_supine:60,13:empty_out:60"
 
 mkdir -p "$LOGDIR" data
-# DEBUG: 把 set -x trace 写到文件
-exec 2>>"$LOGDIR/boot.trace"
-echo "=== boot trace start $(date) ===" >&2
+# Cleanup any stale gate sentinel from a previous aborted run
+rm -f "data/.${SESSION}.gate"
+echo "=== boot trace start $(date) (set -x disabled; check $LOGDIR/live.log for bridge status) ==="
 
 # ① 预检
 command -v mosquitto >/dev/null || { echo "❌ mosquitto not installed"; exit 1; }
@@ -80,8 +79,11 @@ CAM_PID=$!
 REC_PID=$!
 
 # ⑤ 等自然退出
-wait "$CAM_PID"; CAM_RC=$?
-wait "$REC_PID"; REC_RC=$?
+# || CAM_RC=$? 双兜底：(a) 捕获子进程退出码 (b) 防止 set -e 触发主进程退出
+CAM_RC=0
+wait "$CAM_PID" || CAM_RC=$?
+REC_RC=0
+wait "$REC_PID" || REC_RC=$?
 
 # ⑥ 杀 bridges
 kill "${BRIDGE_PIDS[@]}" 2>/dev/null || true
