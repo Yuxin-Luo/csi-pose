@@ -4,6 +4,11 @@
 set -euo pipefail
 set -x   # DEBUG: print every command before execution
 
+# Project root = parent of where this script lives (host/ -> project root)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT"   # ensure all relative paths work regardless of caller's cwd
+
 SESSION="${1:-s01-r1}"
 PYTHON="/home/ruo/anaconda3/envs/dac_dev/bin/python"
 export PYTHONUNBUFFERED=1       # bridge.py print buffered -> boot script grep永远看不到
@@ -43,7 +48,6 @@ get_frames() {
     grep "\[rx$1\]" "$LOGDIR/live.log" 2>/dev/null | grep -oP '"frames":\s*\K\d+' | tail -1
 }
 while true; do
-    echo "[poll] iteration $(date +%H:%M:%S) ready=$ready"
     ready=0
     f0=$(get_frames 0)
     echo "[poll] f0='$f0'"
