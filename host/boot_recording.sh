@@ -75,11 +75,12 @@ echo "✓ preflight OK (mode=$MODE session=$SESSION)"
 
 # ② 后台启 3 bridge (tee 聚合: stderr → 终端 + live.log; polling 从 live.log 按 rx-id grep)
 # bridge --raw-dir 走 $RAW_DIR，确保 test/norm 各自落子目录
+# --log-ts 传入 boot 的 TS，避免 bridge 启动晚 1 秒导致 rawlog 文件名与 ${TS} glob 失配
 BRIDGE_PIDS=()
 : > "$LOGDIR/live.log"        # truncate, 由 tee -a append
 for rx in 0 1 2; do
     "$PYTHON" host/bridge/bridge.py --port "/dev/ttyACM$rx" --rx-id "$rx" \
-        --raw-dir "$RAW_DIR" --status-period 1.0 \
+        --raw-dir "$RAW_DIR" --log-ts "$TS" --status-period 1.0 \
         2>&1 | tee -a "$LOGDIR/live.log" >/dev/null &
     BRIDGE_PIDS+=($!)
 done

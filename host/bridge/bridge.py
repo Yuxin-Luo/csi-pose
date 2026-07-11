@@ -56,6 +56,10 @@ def main():
     ap.add_argument("--mqtt-port", type=int, default=1883)
     ap.add_argument("--no-mqtt", action="store_true", help="Raw log only (skip MQTT)")
     ap.add_argument("--raw-dir", default="logs")
+    ap.add_argument("--log-ts", default=None,
+                    help="Override timestamp in rawlog filename (format %%Y%%m%%d-%%H%%M%%S). "
+                         "Default: time.strftime at bridge start. boot_recording.sh sets this "
+                         "so all 3 rawlogs share the boot session TS, not their per-process start.")
     ap.add_argument("--auto-start", action="store_true",
                     help="Send START on connect (including reconnect) -- seq reset handled by reset event")
     ap.add_argument("--status-period", type=float, default=5.0)
@@ -65,7 +69,8 @@ def main():
 
     raw_dir = Path(args.raw_dir)
     raw_dir.mkdir(parents=True, exist_ok=True)
-    raw_path = raw_dir / f"rx{args.rx_id}-{time.strftime('%Y%m%d-%H%M%S')}.rawlog"
+    log_ts = args.log_ts or time.strftime('%Y%m%d-%H%M%S')
+    raw_path = raw_dir / f"rx{args.rx_id}-{log_ts}.rawlog"
 
     sink = NullSink() if args.no_mqtt else MqttSink(args.mqtt_host, args.mqtt_port)
 
