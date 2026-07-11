@@ -189,9 +189,24 @@ def main():
                     gate_flag.touch()
                     break
 
+        # ②.7 Calibrate real fps from a brief capture burst (~1s on a 30fps cam).
+        # cap.grab() skips decode so measurement reflects pure bus throughput.
+        # 1s boot-cost is acceptable: user just pressed a key.
+        # Clamp to [10, 60] to avoid pathological values (one-frame returns
+        # would otherwise yield ridiculous "1000+ fps").
+        calib_n = 30
+        t_calib_t0 = time.monotonic()
+        for _ in range(calib_n):
+            cap.grab()
+        calib_elapsed = time.monotonic() - t_calib_t0
+        fps_calib = calib_n / calib_elapsed if calib_elapsed > 0 else 0.0
+        fps_calib = max(10.0, min(60.0, fps_calib))
+        print(f"[cam] Calibrated fps: real={fps_calib:.2f} (CAP_PROP_FPS reported={fps_actual:.2f})",
+              flush=True)
+
         # Create VideoWriter with actual shape
         h_frame, w_frame = first_frame.shape[:2]
-        fps_write = fps_actual if fps_actual > 0 else args.fps  # mp4 fps is playback reference -- cam/meta t_ns is the real timing source
+        fps_write = fps_calib if fps_calib > 0 else args.fps  # Measured real fps, not negotiated
         out_dir = Path(args.out)
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / f"{args.session}-{time.strftime('%Y%m%d-%H%M%S')}.mp4"
