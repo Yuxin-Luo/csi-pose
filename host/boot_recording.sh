@@ -5,6 +5,7 @@ set -euo pipefail
 
 SESSION="${1:-s01-r1}"
 PYTHON="/home/ruo/anaconda3/envs/dac_dev/bin/python"
+export PYTHONUNBUFFERED=1       # bridge.py print buffered -> boot script grep永远看不到
 TS="$(date +%Y%m%d-%H%M%S)"
 LOGDIR="logs/boot-${SESSION}-${TS}"
 DURATION=580
