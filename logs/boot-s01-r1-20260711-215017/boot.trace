@@ -1,0 +1,36 @@
+++ date
++ echo '=== boot trace start 2026年 07月 11日 星期六 21:50:17 CST ==='
+=== boot trace start 2026年 07月 11日 星期六 21:50:17 CST ===
++ command -v mosquitto
++ pgrep mosquitto
++ for p in 0 1 2
++ '[' -e /dev/ttyACM0 ']'
++ for p in 0 1 2
++ '[' -e /dev/ttyACM1 ']'
++ for p in 0 1 2
++ '[' -e /dev/ttyACM2 ']'
++ '[' -e /dev/video0 ']'
++ echo '✓ preflight OK (session=s01-r1, ts=20260711-215017)'
++ BRIDGE_PIDS=()
++ :
++ for rx in 0 1 2
++ /home/ruo/anaconda3/envs/dac_dev/bin/python host/bridge/bridge.py --port /dev/ttyACM0 --rx-id 0 --raw-dir logs --status-period 1.0
++ BRIDGE_PIDS+=($!)
++ for rx in 0 1 2
++ tee -a logs/boot-s01-r1-20260711-215017/live.log
++ /home/ruo/anaconda3/envs/dac_dev/bin/python host/bridge/bridge.py --port /dev/ttyACM1 --rx-id 1 --raw-dir logs --status-period 1.0
++ BRIDGE_PIDS+=($!)
++ for rx in 0 1 2
++ tee -a logs/boot-s01-r1-20260711-215017/live.log
++ /home/ruo/anaconda3/envs/dac_dev/bin/python host/bridge/bridge.py --port /dev/ttyACM2 --rx-id 2 --raw-dir logs --status-period 1.0
++ BRIDGE_PIDS+=($!)
++ tee -a logs/boot-s01-r1-20260711-215017/live.log
++ trap 'kill ${BRIDGE_PIDS[@]:-} ${CAM_PID:-} ${REC_PID:-} 2>/dev/null || true; exit 1' INT TERM
++ echo 'Waiting for 3 bridges (frames > 280)...'
++ true
++ ready=0
+++ get_frames 0
+++ grep '\[rx0\]' logs/boot-s01-r1-20260711-215017/live.log
+++ grep -oP '"frames":\s*\K\d+'
+++ tail -1
++ f0=
