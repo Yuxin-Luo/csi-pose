@@ -21,7 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # host/
 from csi_host.cam_core import CamCore  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # host/capture/
-from plan import parse_plan, PlanState, draw_overlay  # noqa: E402
+from plan import parse_plan, expand_plan, PlanState, draw_overlay, draw_overlay_transition  # noqa: E402
 
 # --- Skeleton preview constants (mirrors host/tools/live_skeleton.py) ----
 # Search/track 2-mode simplified for cam_capture: detect every SEARCH_DET_EVERY
@@ -123,7 +123,8 @@ def main():
     ap.add_argument("--no-mqtt", action="store_true", help="Skip MQTT publish (mp4 only)")
     args = ap.parse_args()
     plan_list = parse_plan(args.plan) if args.plan else []
-    plan_state = PlanState(plan_list) if plan_list else None
+    effective_plan = expand_plan(plan_list) if plan_list else []
+    plan_state = PlanState(segments=effective_plan) if effective_plan else None
 
     import cv2  # cv2 imported here only -- tests don't import this file
 
@@ -339,12 +340,18 @@ def main():
                             cv2.FONT_HERSHEY_SIMPLEX, FPS_HUD_SCALE,
                             FPS_HUD_COLOR, FPS_HUD_THICK, cv2.LINE_AA)
 
+                # dev_doc/17 §5.3: skeleton gating 用 is_action
+                is_action = plan_state is None or plan_state.cur_state == "action"
+
                 # Segment overlay (top-right) on PREVIEW only
                 if plan_state is not None and args.overlay:
-                    draw_overlay(preview, plan_state, elapsed)
+                    if is_action:
+                        draw_overlay(preview, plan_state, elapsed)
+                    else:
+                        draw_overlay_transition(preview, plan_state, elapsed)
 
                 # Skeleton + bottom-left stats on PREVIEW only
-                if args.skeleton and skel_runner is not None:
+                if args.skeleton and skel_runner is not None and is_action:
                     import numpy as np   # local: cam_capture used standalone too
                     # Search mode: detect every SEARCH_DET_EVERY frames, PERIODIC.
                     # No "if not skel_bboxes" fallback — that would detect every
