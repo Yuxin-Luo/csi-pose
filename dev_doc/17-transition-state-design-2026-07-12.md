@@ -49,7 +49,7 @@
 |---|---|---|---|
 | 1 | 10s 时长计入方式 | **额外加在每段之间** | 总时长变长但不挤占原段；用户 2026-07-12 明确选此 |
 | 2 | 边界范围 | **11 个 boundary**（empty_in 开头 / empty_out 结尾不加） | 见 §6 |
-| 3 | 总时长 | **580 + 11×10 = 690s**（norm plan）| 比原 580s 多 110s |
+| 3 | 总时长 | **580 + 12×10 = 700s**（norm plan）| 比原 580s 多 120s |
 | 4 | transition 期间是否录制 | **CSI + cam 都录** | 用户 2026-07-12 选；保留现场物理信息用于回看 |
 | 5 | h5 segment 存储 | **`/meta/segments` JSON 范围表 + `/video/segment_idx` + `/video/state`** | 用户 2026-07-12 选；存储省、查询够快 |
 | 6 | cam preview 骨骼 | **transition 期间隐藏骨骼 + overlay 改写** | 用户 2026-07-12 选；避免抽象骨架误导 |
@@ -479,8 +479,8 @@ def draw_overlay_transition(frame, state: PlanState, elapsed_sec: float):
 | `lie_supine → empty_out` | 10s buffer | 60+10+60 |
 | `empty_out` 结尾 | **不加后置 buffer** | 60s |
 
-**总段数** = 12 action + 11 transition = **23 段**
-**总时长** = 580 + 110 = **690s**
+**总段数** = 13 action + 12 transition = **25 段**
+**总时长** = 580 + 120 = **700s**
 
 **为什么方案 a**：empty_in/empty_out 本身已是"无人"段，前置/后置 buffer 浪费 wall-clock 不解决任何污染。
 
@@ -627,15 +627,23 @@ def test_expand_plan_with_transition():
     ]
 
 def test_expand_norm_full():
-    """norm plan 12 段，effective 应有 23 段（12 + 11 transition）"""
+    """norm plan 13 action 段 → effective 25 段（13+12），总 700s
+
+    13 segments from boot_recording.sh norm PLAN:
+    1:empty_in:60, 2-10:pos{1,2,3}_set{1,2,3}:40×9, 11:sit:40,
+    12:lie_supine:60, 13:empty_out:60
+    Actions: 60 + 9×40 + 40 + 60 + 60 = 580s
+    Transitions: 12 × 10 = 120s
+    Total: 700s
+    """
     norm = [(1,"empty_in",60),(2,"pos1_set1",40),(3,"pos2_set1",40),(4,"pos3_set1",40),
             (5,"pos1_set2",40),(6,"pos2_set2",40),(7,"pos3_set2",40),(8,"pos1_set3",40),
             (9,"pos2_set3",40),(10,"pos3_set3",40),(11,"sit",40),(12,"lie_supine",60),
             (13,"empty_out",60)]
     eff = expand_plan(norm)
-    assert len(eff) == 23   # 12 action + 11 transition
-    assert sum(s.duration_s for s in eff) == 690.0
-    assert sum(1 for s in eff if s.state == "transition") == 11
+    assert len(eff) == 25   # 13 action + 12 transition
+    assert sum(s.duration_s for s in eff) == 700.0
+    assert sum(1 for s in eff if s.state == "transition") == 12
 
 def test_expand_test_mode():
     """test plan 2 段（round 3），effective 应有 3 段（2 action + 1 transition），总 70s"""
@@ -669,7 +677,7 @@ python -c "import h5py; h=h5py.File('data/test/s01-r1-*.h5'); print(h['video/sta
 
 # === Step 5 (test 全绿后): norm mode 端到端 ===
 ./host/boot_recording.sh norm s01-r1
-# ffprobe 时长 ~690s, h5 有 23 段
+# ffprobe 时长 ~700s, h5 有 25 段（13 action + 12 transition）
 ```
 
 ### 10.3 手动（cam preview 视觉）

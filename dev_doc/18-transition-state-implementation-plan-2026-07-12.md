@@ -103,8 +103,17 @@ def test_expand_plan_no_transition_when_constant_zero():
         plan.TRANSITION_S_DEFAULT = saved
 
 
-def test_expand_norm_plan_23_segments_690s():
-    """norm 12 action 段 → effective 23 段（12+11），总 690s"""
+def test_expand_norm_plan_25_segments_700s():
+    """norm 13 action 段 → effective 25 段（13+12），总 700s
+
+    Based on actual norm PLAN in host/boot_recording.sh:60:
+    1:empty_in:60,2:pos1_set1:40,3:pos2_set1:40,4:pos3_set1:40,5:pos1_set2:40,
+    6:pos2_set2:40,7:pos3_set2:40,8:pos1_set3:40,9:pos2_set3:40,10:pos3_set3:40,
+    11:sit:40,12:lie_supine:60,13:empty_out:60
+    Actions: empty_in(60) + 9*pos(40) + sit(40) + lie_supine(60) + empty_out(60) = 580s
+    Transitions: 12 * 10 = 120s
+    Total: 580 + 120 = 700s
+    """
     norm = [
         (1, "empty_in", 60), (2, "pos1_set1", 40), (3, "pos2_set1", 40),
         (4, "pos3_set1", 40), (5, "pos1_set2", 40), (6, "pos2_set2", 40),
@@ -113,9 +122,9 @@ def test_expand_norm_plan_23_segments_690s():
         (13, "empty_out", 60),
     ]
     eff = plan.expand_plan(norm)
-    assert len(eff) == 23
-    assert sum(s.duration_s for s in eff) == 690.0
-    assert sum(1 for s in eff if s.state == "transition") == 11
+    assert len(eff) == 25
+    assert sum(s.duration_s for s in eff) == 700.0
+    assert sum(1 for s in eff if s.state == "transition") == 12
 
 
 def test_expand_test_plan_3_segments_70s():
@@ -1279,18 +1288,18 @@ cd /home/ruo/Desktop/LYX/USTB-SONY/esp-csi-v2/ESP32_FallRec_Reference/ReferenceC
 ./host/boot_recording.sh norm s01-r1
 ```
 
-按 Enter 开始录制。**会录 690s**（不是 580s）。
+按 Enter 开始录制。**会录 700s**（不是 580s）。
 
-- [ ] **Step 2: 验证 mp4 时长 ≈ 690s**
+- [ ] **Step 2: 验证 mp4 时长 ≈ 700s**
 
 ```bash
 cd /home/ruo/Desktop/LYX/USTB-SONY/esp-csi-v2/ESP32_FallRec_Reference/ReferenceCode/Opensourse/csi-pose
 ffprobe $(ls -t data/s01-r1-*.mp4 | head -1) -show_entries format=duration -of default=noprint_wrappers=1:nokey=1
 ```
 
-Expected: ~690（690.0 ± 5.0）
+Expected: ~700（700.0 ± 5.0）
 
-- [ ] **Step 3: 验证 h5 `/meta/segments` 含 23 段（12 action + 11 transition）**
+- [ ] **Step 3: 验证 h5 `/meta/segments` 含 25 段（13 action + 12 transition）**
 
 ```bash
 cd /home/ruo/Desktop/LYX/USTB-SONY/esp-csi-v2/ESP32_FallRec_Reference/ReferenceCode/Opensourse/csi-pose
@@ -1302,18 +1311,18 @@ segs = json.loads(h['meta'].attrs['segments'])
 print(f'total: {len(segs)} segments')
 print(f'action: {sum(1 for s in segs if s[\"state\"] == \"action\")}')
 print(f'transition: {sum(1 for s in segs if s[\"state\"] == \"transition\")}')
-assert len(segs) == 23, f'expected 23, got {len(segs)}'
-assert sum(1 for s in segs if s['state'] == 'transition') == 11
-print('OK: 23 segments, 11 transitions')
+assert len(segs) == 25, f'expected 25, got {len(segs)}'
+assert sum(1 for s in segs if s['state'] == 'transition') == 12
+print('OK: 25 segments, 12 transitions')
 "
 ```
 
-Expected: 23 段 / 12 action / 11 transition
+Expected: 25 段 / 13 action / 12 transition
 
 - [ ] **Step 4: cam preview 视觉验证（手动）**
 
 观察 norm mode 录制时的 cam 窗口：
-- 60s / 100s / 140s / ... / 690s 这些 boundary 处应有亮品红 overlay（11 处）
+- 60s / 100s / 140s / ... / 700s 这些 boundary 处应有亮品红 overlay（12 处）
 - action 段应有黄色 overlay + 骨骼
 - transition 段应只有品红 box + 骨骼消失
 
