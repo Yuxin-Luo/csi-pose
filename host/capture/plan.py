@@ -132,3 +132,51 @@ def draw_overlay(frame, state: PlanState, elapsed_sec: float):
         cv2.putText(frame, txt, (x0 + pad, y), font, scale, (0, 0, 0), thick, cv2.LINE_AA)
         y += th + pad
     return frame
+
+
+# ─── Transition overlay 颜色（dev_doc/17 §1 decision 8）───────────────
+# 与 action 状态黄色 (0,255,255) 形成最强对比（纯蓝+红，无绿通道重叠）
+TRANSITION_BOX_COLOR = (255, 0, 255)    # 亮品红
+TRANSITION_TEXT_COLOR = (255, 255, 255) # 白
+
+
+def draw_overlay_transition(frame, state: PlanState, elapsed_sec: float):
+    """Transition 期 overlay: 亮品红 box + 白字。
+
+    显示内容:
+      - 第 1 行: "Transition X/Y — TRANSITION"  (X/Y 是 transition 段计数)
+      - 第 2 行: "● RECORDING  {elapsed_in_seg}s / {seg_duration}s"
+
+    Args:
+        frame: numpy.ndarray (in-place 修改)
+        state: PlanState, 当前应在 transition 段
+        elapsed_sec: 从录制开始的总秒数
+
+    Returns:
+        frame (同一对象, in-place 修改)
+    """
+    import cv2
+    h, w = frame.shape[:2]
+
+    # 数前几个 transition 段找当前位置
+    trans_n = sum(1 for s in state.segments[:state.cur_seg + 1]
+                  if s.state == "transition")
+    total_trans = sum(1 for s in state.segments if s.state == "transition")
+
+    line1 = f"Transition {trans_n}/{total_trans} — TRANSITION"
+    seg_elapsed = elapsed_sec - (state.seg_start or elapsed_sec)
+    line2 = f"● RECORDING  {seg_elapsed:.1f}s / {state.cur_duration}s"
+
+    font, scale, thick, pad = cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1, 8
+    sizes = [cv2.getTextSize(t, font, scale, thick)[0] for t in (line1, line2)]
+    box_w = max(s[0] for s in sizes) + 2 * pad
+    box_h = sum(s[1] for s in sizes) + 3 * pad
+    x0, y0 = w - box_w - 10, 10
+    cv2.rectangle(frame, (x0, y0), (x0 + box_w, y0 + box_h),
+                  TRANSITION_BOX_COLOR, -1)
+    y = y0 + pad + sizes[0][1]
+    for txt, (tw, th) in zip((line1, line2), sizes):
+        cv2.putText(frame, txt, (x0 + pad, y), font, scale,
+                    TRANSITION_TEXT_COLOR, thick, cv2.LINE_AA)
+        y += th + pad
+    return frame
