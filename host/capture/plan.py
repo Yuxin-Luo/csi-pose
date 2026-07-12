@@ -7,6 +7,48 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 
+# ─── Transition 常量（dev_doc/17 §2.2）──────────────────────────────────
+# 段间 transition 时长（秒）。要改时长 edit 这里，全局生效。
+# 设 0 → expand_plan() 走原始路径，与 transition 特性引入前 100% 等价。
+TRANSITION_S_DEFAULT = 10
+
+
+@dataclass
+class PlanSegment:
+    """effective_plan 的一段（含 transition 段）。"""
+    idx: int                    # 原始 plan 段编号（1-based）
+    name: str                   # "empty_in" / "transition" / "pos1_set1" / ...
+    duration_s: float
+    state: str                  # "action" | "transition"
+
+
+def expand_plan(plan: list) -> list:
+    """把 [(idx, name, dur), ...] 展开成 effective_plan，每对相邻段间插 transition。
+
+    Args:
+        plan: [(idx, name, dur_seconds), ...] 原始 plan 列表
+
+    Returns:
+        list[PlanSegment]: effective_plan。TRANSITION_S_DEFAULT=0 时等同原 plan。
+
+    Example:
+        >>> expand_plan([(1,"a",30),(2,"b",20)])
+        [PlanSegment(1,"a",30,"action"),
+         PlanSegment(1,"transition",10,"transition"),
+         PlanSegment(2,"b",20,"action")]
+    """
+    if TRANSITION_S_DEFAULT <= 0:
+        return [PlanSegment(int(i), str(n), float(d), "action")
+                for i, n, d in plan]
+    out = []
+    for i, (idx, name, dur) in enumerate(plan):
+        if i > 0:
+            out.append(PlanSegment(int(plan[i-1][0]), "transition",
+                                   float(TRANSITION_S_DEFAULT), "transition"))
+        out.append(PlanSegment(int(idx), str(name), float(dur), "action"))
+    return out
+
+
 def parse_plan(s: str) -> List[Tuple[int, str, int]]:
     """Parse "1:label:60,2:label:40,..." -> [(1,"label",60), ...]."""
     out = []
