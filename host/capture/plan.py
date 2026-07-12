@@ -68,38 +68,60 @@ def parse_plan(s: str) -> List[Tuple[int, str, int]]:
 
 @dataclass
 class PlanState:
-    plan: list
+    segments: list            # list[PlanSegment]，来自 expand_plan()
     cur_seg: int = 0
-    cur_label: str = ""
     seg_start: Optional[float] = None
 
     def __post_init__(self):
-        self.cur_label = self.plan[0][1]
+        if not self.segments:
+            raise ValueError("PlanState requires non-empty segments list")
 
     def tick(self, now: float) -> bool:
-        if self.seg_start is None or self.cur_seg >= len(self.plan) - 1:
+        """当 now 跨过当前段边界时推进 cur_seg，返回 True 表示刚切换。"""
+        if self.seg_start is None:
+            self.seg_start = now
             return False
-        _, _, dur = self.plan[self.cur_seg]
-        if now - self.seg_start >= dur:
+        if self.cur_seg >= len(self.segments) - 1:
+            return False
+        if now - self.seg_start >= self.cur_segment.duration_s:
             self.cur_seg += 1
-            self.cur_label = self.plan[self.cur_seg][1]
             self.seg_start = now
             return True
         return False
 
     @property
-    def total_segments(self) -> int:
-        return len(self.plan)
+    def cur_segment(self) -> "PlanSegment":
+        return self.segments[self.cur_seg]
 
     @property
-    def cur_duration(self) -> int:
-        return self.plan[self.cur_seg][2]
+    def cur_label(self) -> str:
+        return self.cur_segment.name
+
+    @property
+    def cur_duration(self):
+        return self.cur_segment.duration_s
+
+    @property
+    def cur_state(self) -> str:
+        return self.cur_segment.state
+
+    @property
+    def total_segments(self) -> int:
+        return len(self.segments)
 
 
 def draw_overlay(frame, state: PlanState, elapsed_sec: float):
-    """Draw segment overlay in upper-right corner (in-place)."""
+    """Draw segment overlay in upper-right corner (in-place).
+
+    Color is determined by cur_state: yellow for "action", magenta for "transition".
+    """
     import cv2
     h, w = frame.shape[:2]
+    # Choose color based on current state
+    if state.cur_state == "transition":
+        box_color = (255, 0, 255)   # magenta for transition
+    else:
+        box_color = (0, 255, 255)   # yellow for action
     line1 = f"Segment {state.cur_seg + 1}/{state.total_segments} — {state.cur_label}"
     line2 = f"● RECORDING  {elapsed_sec:.1f}s / {state.cur_duration}s"
     font, scale, thick, pad = cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1, 8
@@ -107,7 +129,7 @@ def draw_overlay(frame, state: PlanState, elapsed_sec: float):
     box_w = max(s[0] for s in sizes) + 2 * pad
     box_h = sum(s[1] for s in sizes) + 3 * pad
     x0, y0 = w - box_w - 10, 10
-    cv2.rectangle(frame, (x0, y0), (x0 + box_w, y0 + box_h), (0, 255, 255), -1)
+    cv2.rectangle(frame, (x0, y0), (x0 + box_w, y0 + box_h), box_color, -1)
     y = y0 + pad + sizes[0][1]
     for txt, (tw, th) in zip((line1, line2), sizes):
         cv2.putText(frame, txt, (x0 + pad, y), font, scale, (0, 0, 0), thick, cv2.LINE_AA)
