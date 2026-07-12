@@ -13,9 +13,14 @@ from typing import List, Optional, Tuple
 TRANSITION_S_DEFAULT = 10
 
 
-@dataclass
+@dataclass(frozen=True)
 class PlanSegment:
-    """effective_plan 的一段（含 transition 段）。"""
+    """effective_plan 的一段（含 transition 段）。
+
+    frozen so callers (mqtt_recorder, recorder, cam_capture) can rely on the
+    tuple being immutable — accidental mutation would silently corrupt the
+    effective_plan.
+    """
     idx: int                    # 原始 plan 段编号（1-based）
     name: str                   # "empty_in" / "transition" / "pos1_set1" / ...
     duration_s: float
