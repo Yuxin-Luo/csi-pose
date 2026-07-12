@@ -49,7 +49,7 @@ def wire_client(client, on_message, *, subscriptions=None, log=None):
 
 
 class RecorderCore:
-    def __init__(self, writer, *, on_event=None):
+    def __init__(self, writer, *, on_event=None, effective_plan=None):
         self.writer = writer
         self.on_event = on_event
         self._unwrap = {}    # rx_id -> TimeUnwrapper
@@ -61,6 +61,33 @@ class RecorderCore:
         self.unknown = 0
         self.reboots = 0
         self.wraps = 0       # u32 wrap cumulative count (per-rx sum)
+        # dev_doc/17 §4.5: segment lookup dependencies
+        self._effective_plan = effective_plan or []
+        self._t0_wall_ns = None  # set by set_recording_start() after gate opens
+
+    def set_recording_start(self, t_wall_ns: int):
+        """dev_doc/17 §4.5: called by recorder.py after start-on-key gate opens;
+        injects wall-clock t0 so _lookup_segment can map cam frames to segments."""
+        self._t0_wall_ns = int(t_wall_ns)
+
+    def _lookup_segment(self, t_ns: int) -> tuple:
+        """Look up which segment a video frame belongs to by wall-clock t_ns.
+
+        Returns:
+            (seg_idx, state) — seg_idx is effective_plan index, state is 0/1 (transition/action).
+            No plan / not started / t_ns < t0_wall_ns: treated as action (backward compat).
+        """
+        if not self._effective_plan or self._t0_wall_ns is None:
+            return 0, 1
+        elapsed_s = (t_ns - self._t0_wall_ns) / 1e9
+        if elapsed_s < 0:
+            return 0, 1
+        cum = 0.0
+        for i, seg in enumerate(self._effective_plan):
+            cum += seg.duration_s
+            if elapsed_s < cum:
+                return i, (0 if seg.state == "transition" else 1)
+        return len(self._effective_plan) - 1, 1
 
     def handle(self, topic, payload, t_recv_ns=0):
         # t_recv_ns: recorder receive time — bridge-stamped host time (included in unpack_csi payload)
@@ -113,7 +140,9 @@ class RecorderCore:
             fi = d.get("frame_idx", d.get(b"frame_idx"))
             if t is None or fi is None:
                 raise ValueError("t_ns/frame_idx missing")
-            self.writer.append_video(int(t), int(fi))
+            # dev_doc/17 §4.4: look up segment + state for this video frame
+            seg_idx, state = self._lookup_segment(int(t))
+            self.writer.append_video(int(t), int(fi), seg_idx=seg_idx, state=state)
             self.cam_frames += 1
         except Exception:
             self.cam_errors += 1
