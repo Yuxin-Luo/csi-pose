@@ -123,7 +123,7 @@ echo "✓ 3 bridges ready"
 "$PYTHON" host/capture/cam_capture.py \
     --camera 0 --backend any --out "$OUT_DIR" --session "$SESSION" --duration "$DURATION" \
     --width 640 --height 360 --fps 30 \
-    --plan "$PLAN" --start-on-key --overlay --status-period 1.0 $NO_TRANS_FLAG \
+    --plan "$PLAN" --start-on-key --no-skeleton --no-overlay --status-period 1.0 $NO_TRANS_FLAG \
     > "$LOGDIR/cam.log" 2>&1 &
 CAM_PID=$!
 
