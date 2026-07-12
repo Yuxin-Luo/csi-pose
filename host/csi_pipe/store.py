@@ -42,6 +42,12 @@ class SessionWriter:
                                dtype=np.uint64, chunks=(1024,))
         self._h.create_dataset("video/frame_idx", shape=(0,), maxshape=(None,),
                                dtype=np.uint32, chunks=(1024,))
+        # dev_doc/17 §3.2: per-video-frame segment 标记
+        self._h.create_dataset("video/segment_idx", shape=(0,), maxshape=(None,),
+                               dtype=np.uint32, chunks=(1024,))
+        self._h.create_dataset("video/state", shape=(0,), maxshape=(None,),
+                               dtype=np.uint8, chunks=(1024,))
+        self._segments_meta = []   # dev_doc/17 §3.4
 
     def set_meta(self, k, v):
         with self._lock:
@@ -64,11 +70,22 @@ class SessionWriter:
             if len(buf["t_ns"]) >= self._chunk:
                 self._flush_link(key)
 
-    def append_video(self, t_ns, frame_idx):
+    def append_video(self, t_ns, frame_idx, *, seg_idx=0, state=1):
+        """dev_doc/17 §3.4: seg_idx/state 是关键字参数，默认 action (backward compat)。"""
         with self._lock:
-            self._vid.append((int(t_ns), int(frame_idx)))
+            self._vid.append((int(t_ns), int(frame_idx), int(seg_idx), int(state)))
             if len(self._vid) >= 1024:
                 self._flush_video()
+
+    def update_segment(self, *, start_t_ns, end_t_ns, name, state):
+        """dev_doc/17 §3.4: 累积段范围表，close() 时写入 meta/segments JSON。"""
+        with self._lock:
+            self._segments_meta.append({
+                "start_t_ns": int(start_t_ns),
+                "end_t_ns": int(end_t_ns),
+                "name": str(name),
+                "state": str(state),
+            })
 
     def _ensure_link(self, key):
         g = self._h.require_group(f"links/{key[0]}{key[1]}")
@@ -96,12 +113,18 @@ class SessionWriter:
             return
         ts = self._h["video/t_ns"]
         fi = self._h["video/frame_idx"]
+        si = self._h["video/segment_idx"]
+        st = self._h["video/state"]
         n = ts.shape[0]
         m = len(self._vid)
         ts.resize(n + m, axis=0)
         fi.resize(n + m, axis=0)
+        si.resize(n + m, axis=0)
+        st.resize(n + m, axis=0)
         ts[n:] = np.asarray([v[0] for v in self._vid], np.uint64)
         fi[n:] = np.asarray([v[1] for v in self._vid], np.uint32)
+        si[n:] = np.asarray([v[2] for v in self._vid], np.uint32)
+        st[n:] = np.asarray([v[3] for v in self._vid], np.uint8)
         self._vid.clear()
 
     def flush(self):
@@ -120,6 +143,8 @@ class SessionWriter:
             self.set_meta("frames_total", int(sum(self._counts.values())))
             self.set_meta("links", json.dumps(
                 {f"{k[0]}{k[1]}": int(v) for k, v in sorted(self._counts.items())}))
+            # dev_doc/17 §3.4: 写入 meta/segments 范围表
+            self.set_meta("segments", json.dumps(self._segments_meta, ensure_ascii=False))
             self._h.close()
 
 
