@@ -42,12 +42,16 @@ TS="$(date +%Y%m%d-%H%M%S)"
 LOGDIR="logs/boot-${SESSION}-${MODE}-${TS}"
 
 # ─── MODE-specific config (DURATION + plan + output dirs) ────────────
-# test: 60s smoke run, 4 short segments, isolated subdirs
+# test: 70s transition-validation run, 2 actions + 1 transition (auto), isolated subdirs
+#   effective_plan = stand(30) + transition(10) + squat(30) = 70s
+#   设计目的: 验证 transition 特性本身, 不需要 norm 的 12 段复杂度
 # norm: 580s 13-segment D1 plan from dev_doc/6 §4, training dirs
+#   effective_plan = 580 + 11×10 = 690s (用户传 --duration 580, 依赖 §8 auto 兜底)
+#   注意: norm 的 --duration 仍传 580, 让 cam/recorder 各自用 effective_plan 总和兜底
 case "$MODE" in
     test)
         DURATION=60
-        PLAN="1:empty_in:15,2:walk:25,3:lie_supine:10,4:empty_out:10"
+        PLAN="1:stand:30,2:squat:30"
         OUT_DIR="data/test"
         RAW_DIR="logs/test"
         ;;

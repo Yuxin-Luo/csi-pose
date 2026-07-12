@@ -7,6 +7,11 @@ t_ns is host clock right after grab (same principle as bridge) -- offset from ex
 is measured by LED alignment verification.
 Auto exposure/focus/WB attempts to disable and logs request vs actual (Section 3.3 -- some webcams ignore set).
 Required packages: opencv-python, msgpack, paho-mqtt.
+
+--skeleton (default ON): draws COCO-17 skeleton + bbox on the LIVE PREVIEW window
+only. Recorded mp4 keeps segment overlay but NO skeleton (teacher.py reads mp4
+later -- pre-drawn skeletons would re-trigger RTMPose on already-labelled pixels).
+Requires rtmlib + onnxruntime. First run downloads ~145MB to ~/.cache/rtmlib/.
 """
 import argparse
 import sys
@@ -17,6 +22,26 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # host/
 from csi_host.cam_core import CamCore  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # host/capture/
 from plan import parse_plan, PlanState, draw_overlay  # noqa: E402
+
+# --- Skeleton preview constants (mirrors host/tools/live_skeleton.py) ----
+# Search/track 2-mode simplified for cam_capture: detect every SEARCH_DET_EVERY
+# frames, pose every frame on the most-recent bboxes. No track-mode bbox
+# inheritance because the preview is short-lived (user watches for ~10 min).
+SEARCH_DET_EVERY = 5    # Lower than live_skeleton (10) -- fresh start each run, no Track mode
+SKEL_DET_THR = 0.5      # RTMDet person score threshold
+KPT_THR = 0.3           # RTMPose keypoint score threshold (drop person if avg below)
+MAX_PERSONS = 3         # COCO usually 1-2 people, 3 covers edge cases
+
+# --- Preview-only HUD layout (NEVER touches mp4) ---------------------------
+# Top-left: live fps (always on while recording). Bottom-left: skeleton stats
+# (only when --skeleton). Segment overlay (top-right) lives on preview as well.
+# All HUD drawing targets the `preview` copy; `frame` going to writer.write()
+# stays 100% raw -- matches upstream cam_capture.py author intent.
+FPS_HUD_POS = (8, 28)
+FPS_HUD_SCALE = 0.8
+FPS_HUD_COLOR = (0, 255, 255)   # BGR yellow — high visibility on top of any frame
+FPS_HUD_THICK = 2
+LIVE_FPS_WINDOW_S = 1.0         # rolling window for live fps
 
 
 # ---------------------------------------------------------------------------
@@ -87,6 +112,12 @@ def main():
     ap.add_argument("--plan", default=None, help='Plan string "1:label:60,2:label:40,..."')
     ap.add_argument("--overlay", action="store_true", default=True, help="Draw segment overlay")
     ap.add_argument("--no-overlay", dest="overlay", action="store_false")
+    ap.add_argument("--skeleton", action="store_true", default=True,
+                    help="Draw COCO-17 skeleton + bbox on the LIVE PREVIEW (default ON; mp4 stays raw)")
+    ap.add_argument("--no-skeleton", dest="skeleton", action="store_false",
+                    help="Disable live skeleton preview (mp4 is unaffected either way)")
+    ap.add_argument("--skeleton-device", default="cpu", choices=["cpu", "cuda", "auto"],
+                    help="RTMDet+RTMPose inference device (default cpu)")
     ap.add_argument("--mqtt-host", default="127.0.0.1")
     ap.add_argument("--mqtt-port", type=int, default=1883)
     ap.add_argument("--no-mqtt", action="store_true", help="Skip MQTT publish (mp4 only)")
@@ -189,6 +220,42 @@ def main():
                     gate_flag.touch()
                     break
 
+        # ②.65 Lazy-init skeleton runner (post-gate so user doesn't wait for
+        # ~145MB model download BEFORE they even know they're ready to record).
+        # draw_skeleton from rtmlib; runner from teacher/csi_teacher/runner.py
+        # (same RTMDet+RTMPose pair used by live_skeleton.py and teacher.py).
+        skel_runner = None
+        skel_draw = None
+        if args.skeleton:
+            try:
+                from rtmlib import draw_skeleton as _draw_skeleton
+                skel_draw = _draw_skeleton
+            except ImportError as e:
+                print(f"[cam] ERROR: --skeleton requires rtmlib ({e.name}). "
+                      f"Install: pip install --no-deps rtmlib==0.0.15 onnxruntime tqdm",
+                      file=sys.stderr, flush=True)
+                sys.exit(1)
+            try:
+                sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "teacher"))
+                from csi_teacher.runner import make_runner
+                print(f"[cam] skeleton: loading RTMDet+RTMPose on {args.skeleton_device} "
+                      f"(first run downloads ~145MB to ~/.cache/rtmlib/)", flush=True)
+                skel_runner = make_runner(device=args.skeleton_device)
+                print("[cam] skeleton: runner ready", flush=True)
+            except Exception as e:
+                print(f"[cam] ERROR: skeleton runner init failed: {type(e).__name__}: {e}",
+                      file=sys.stderr, flush=True)
+                sys.exit(1)
+        skel_bboxes = []           # Last RTMDet boxes (inherited across frames, refreshed every SEARCH_DET_EVERY)
+        skel_frame_idx = 0         # Frame counter (mod SEARCH_DET_EVERY triggers re-detect)
+        skel_det_ms = 0.0          # Last detect latency (HUD)
+        skel_pose_ms = 0.0         # Last pose batch latency (HUD)
+
+        # Live fps HUD state (always-on top-left of preview)
+        live_fps = 0.0
+        _fps_count = 0
+        _fps_t0 = time.monotonic()
+
         # ②.7 Calibrate real fps from a brief capture burst (~1s on a 30fps cam).
         # cap.grab() skips decode so measurement reflects pure bus throughput.
         # 1s boot-cost is acceptable: user just pressed a key.
@@ -235,6 +302,11 @@ def main():
             t = time.time_ns()  # Capture immediately after grab
 
             if ret:
+                # -- Plan state machine ---------------------------------------------
+                # Tick regardless of args.overlay so segment transitions stay
+                # reproducible from `[cam] segment N/M -> label` log lines; only
+                # the visual overlay on the preview is gated by args.overlay.
+                elapsed = 0.0
                 if plan_state is not None:
                     if plan_state.seg_start is None:
                         plan_state.seg_start = time.monotonic()
@@ -243,11 +315,70 @@ def main():
                         print(f"[cam] segment {plan_state.cur_seg + 1}/{plan_state.total_segments} -> {plan_state.cur_label}", flush=True)
                         plan_state.seg_start = time.monotonic()
                         elapsed = 0.0
-                    if args.overlay:
-                        draw_overlay(frame, plan_state, elapsed)
+
                 core.handle_frame(t)
-                writer.write(frame)
-                cv2.imshow("cam", frame)
+                writer.write(frame)        # mp4 = 100% raw (no cv2 ever touches frame)
+
+                # --- Live preview: ALWAYS on a separate `preview` copy -------------
+                # All cv2.putText / draw_skeleton / draw_overlay below operate
+                # ONLY on `preview`. frame was already serialized to mp4 above,
+                # so no further cv2 call can leak into the mp4 stream. This
+                # satisfies the upstream author intent of mp4 = raw frames.
+                preview = frame.copy()
+
+                # Roll live fps (window = LIVE_FPS_WINDOW_S seconds, recomputed each flush)
+                _fps_count += 1
+                _now = time.monotonic()
+                if _now - _fps_t0 >= LIVE_FPS_WINDOW_S:
+                    live_fps = _fps_count / (_now - _fps_t0)
+                    _fps_count = 0
+                    _fps_t0 = _now
+
+                # Top-left: live fps — always shown on preview
+                cv2.putText(preview, f"FPS {live_fps:4.1f}", FPS_HUD_POS,
+                            cv2.FONT_HERSHEY_SIMPLEX, FPS_HUD_SCALE,
+                            FPS_HUD_COLOR, FPS_HUD_THICK, cv2.LINE_AA)
+
+                # Segment overlay (top-right) on PREVIEW only
+                if plan_state is not None and args.overlay:
+                    draw_overlay(preview, plan_state, elapsed)
+
+                # Skeleton + bottom-left stats on PREVIEW only
+                if args.skeleton and skel_runner is not None:
+                    import numpy as np   # local: cam_capture used standalone too
+                    # Search mode: detect every SEARCH_DET_EVERY frames, PERIODIC.
+                    # No "if not skel_bboxes" fallback — that would detect every
+                    # frame when no one is in shot and pin fps at ~10 (RTMDet
+                    # ~100ms/frame). Upstream live_skeleton.py uses pure
+                    # time-based _det_due() for the same reason. Stale bboxes
+                    # for ≤(SEARCH_DET_EVERY-1) frames are filtered out by the
+                    # KPT_THR=0.3 mean-score gate in the pose loop below.
+                    if skel_frame_idx % SEARCH_DET_EVERY == 0:
+                        t0 = time.perf_counter()
+                        dets = skel_runner.detect(frame)
+                        skel_det_ms = (time.perf_counter() - t0) * 1e3
+                        skel_bboxes = [d[:4] for d in dets if d[4] >= SKEL_DET_THR][:MAX_PERSONS]
+                    # Pose each tracked bbox (search-mode bboxes also work; pose is cheap)
+                    persons = []
+                    t0 = time.perf_counter()
+                    for bbox in skel_bboxes:
+                        kpts = skel_runner.pose(frame, bbox)
+                        if kpts[:, 2].mean() >= KPT_THR:
+                            persons.append(kpts)
+                    skel_pose_ms = (time.perf_counter() - t0) * 1e3
+                    skel_frame_idx += 1
+
+                    if persons:
+                        k = np.stack(persons)
+                        # draw_skeleton returns a NEW ndarray — assign to `preview`
+                        preview = skel_draw(preview, k[:, :, :2], k[:, :, 2],
+                                            openpose_skeleton=False, kpt_thr=KPT_THR)
+                    hud = f"skel N={len(persons)}  det={skel_det_ms:.0f}ms  pose={skel_pose_ms:.0f}ms"
+                    color = (0, 255, 0) if persons else (0, 100, 255)
+                    cv2.putText(preview, hud, (8, preview.shape[0] - 8),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
+
+                cv2.imshow("cam", preview)
                 cv2.waitKey(1)
             else:
                 consec = core.note_drop()

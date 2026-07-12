@@ -52,7 +52,15 @@ mkdir -p "$(dirname "$OUT")"
     echo
     echo "--- count of distinct USB events since boot ---"
     for kind in 'disconnect' 'reconnect' 'reset' 'suspend' 'resume'; do
-        n=$(dmesg --color=never 2>/dev/null | grep -ic "$kind" | head -1)
+        # dmesg needs kmsg CAP_SYSLOG; on systems without it (e.g. non-root user
+        # without CAP_SYSLOG) dmesg returns 1, which +pipefail +set -e would
+        # silently kill the whole script. Fall back to journalctl -k (works
+        # without root when user is in systemd-journal) or /var/log/kern.log
+        # (adm group), and finally to 0 if nothing readable.
+        n=$(dmesg --color=never 2>/dev/null | grep -ic "$kind" | head -1) \
+            || n=$(journalctl -k --no-pager 2>/dev/null | grep -ic "$kind" | head -1) \
+            || n=$(test -r /var/log/kern.log && grep -ic "$kind" /var/log/kern.log | head -1) \
+            || n=0
         echo "  $kind: $n events"
     done
 } > "$OUT" 2>&1
