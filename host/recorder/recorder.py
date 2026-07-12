@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # host/
 from csi_pipe.mqtt_recorder import RecorderCore, wire_client  # noqa: E402
 from csi_pipe.store import SessionWriter  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "capture"))  # host/capture/
-from plan import parse_plan  # noqa: E402
+from plan import parse_plan, expand_plan  # noqa: E402
 
 
 def main():
@@ -32,6 +32,7 @@ def main():
     ap.add_argument("--plan", default=None, help='Plan string (stderr log + HDF5 meta only)')
     args = ap.parse_args()
     plan_list = parse_plan(args.plan) if args.plan else []
+    effective_plan = expand_plan(plan_list) if plan_list else []
 
     import paho.mqtt.client as mqtt
 
@@ -46,7 +47,8 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{args.session}-{time.strftime('%Y%m%d-%H%M%S')}.h5"
     writer = SessionWriter(path, meta={"session": args.session})
-    core = RecorderCore(writer, on_event=lambda k, v: print(f"[rec] {k}: {v}", flush=True))
+    core = RecorderCore(writer, on_event=lambda k, v: print(f"[rec] {k}: {v}", flush=True),
+                        effective_plan=effective_plan)
 
     # paho swallows callback exceptions -- if handle() fails, silent no-data session results.
     # Only the first exception is detailed, then set an exit flag so the main loop terminates abnormally.
@@ -92,6 +94,8 @@ def main():
             gate_flag.unlink(missing_ok=True)
     print(f"[rec] Recording: {path}", flush=True)
 
+    t0_wall_ns = time.time_ns()       # dev_doc/17 §4.5: 与 cam_capture 共享 wall-clock
+    core.set_recording_start(t0_wall_ns)
     t0 = time.monotonic()
     last = t0
     exit_code = 0
@@ -104,17 +108,33 @@ def main():
                 exit_code = 1
                 break
             now = time.monotonic()
-            if plan_list:
+            if effective_plan:
                 elapsed = now - t0
-                cum, new_seg_idx = 0, len(plan_list) - 1
-                for i, (_, _, d) in enumerate(plan_list):
-                    cum += d
+                new_seg_idx = -1
+                cum = 0.0
+                for i, seg in enumerate(effective_plan):
+                    cum += seg.duration_s
                     if elapsed < cum:
                         new_seg_idx = i
                         break
+                else:
+                    new_seg_idx = len(effective_plan) - 1
                 if not hasattr(main, "_last_seg") or main._last_seg != new_seg_idx:
+                    # 段切换: 先关闭 PREV segment 的范围
+                    if hasattr(main, "_last_seg") and hasattr(main, "_seg_start_t_ns"):
+                        prev = effective_plan[main._last_seg]
+                        writer.update_segment(
+                            start_t_ns=main._seg_start_t_ns,
+                            end_t_ns=t0_wall_ns + int((cum - seg.duration_s) * 1e9),
+                            name=prev.name,
+                            state=prev.state,
+                        )
+                    # 开启 NEW segment 的范围
+                    cur = effective_plan[new_seg_idx]
+                    main._seg_start_t_ns = t0_wall_ns + int((cum - seg.duration_s) * 1e9)
                     main._last_seg = new_seg_idx
-                    print(f"[rec] segment {new_seg_idx + 1}/{len(plan_list)} -> {plan_list[new_seg_idx][1]}", flush=True)
+                    print(f"[rec] segment {new_seg_idx + 1}/{len(effective_plan)} -> "
+                          f"{cur.name} ({cur.state})", flush=True)
             if now - last >= args.status_period:
                 last = now
                 writer.flush()                      # Periodic flush (spec error handling)
@@ -124,6 +144,15 @@ def main():
     except KeyboardInterrupt:
         print("\n[rec] stopping", flush=True)
     finally:
+        # dev_doc/17 §4.3: 关闭最后一段的范围
+        if effective_plan and hasattr(main, "_last_seg") and hasattr(main, "_seg_start_t_ns"):
+            last_seg = effective_plan[main._last_seg]
+            writer.update_segment(
+                start_t_ns=main._seg_start_t_ns,
+                end_t_ns=time.time_ns(),
+                name=last_seg.name,
+                state=last_seg.state,
+            )
         if args.plan:
             writer.set_meta("plan", args.plan)
         client.loop_stop()
