@@ -32,26 +32,30 @@ def test_expand_plan_no_transition_when_constant_zero():
         plan.TRANSITION_S_DEFAULT = saved
 
 
-def test_expand_norm_plan_23_segments_690s():
-    """norm 12 action 段 → effective 23 段（12+11），总 690s
+def test_expand_norm_plan_25_segments_700s():
+    """norm 13 action 段 → effective 25 段（13+12），总 700s
 
-    Per brief docstring: 12 action segments, 11 transitions between them,
-    580s (actions) + 110s (transitions) = 690s total.
+    Based on actual norm PLAN in host/boot_recording.sh:60:
+    1:empty_in:60,2:pos1_set1:40,3:pos2_set1:40,4:pos3_set1:40,5:pos1_set2:40,
+    6:pos2_set2:40,7:pos3_set2:40,8:pos1_set3:40,9:pos2_set3:40,10:pos3_set3:40,
+    11:sit:40,12:lie_supine:60,13:empty_out:60
+    Actions: empty_in(60) + 9*pos(40) + sit(40) + lie_supine(60) + empty_out(60) = 580s
+    Transitions: 12 * 10 = 120s
+    Total: 580 + 120 = 700s
     """
     norm = [
         (1, "empty_in", 60), (2, "pos1_set1", 40), (3, "pos2_set1", 40),
         (4, "pos3_set1", 40), (5, "pos1_set2", 40), (6, "pos2_set2", 40),
         (7, "pos3_set2", 40), (8, "pos1_set3", 40), (9, "pos2_set3", 40),
         (10, "pos3_set3", 40), (11, "sit", 40), (12, "lie_supine", 60),
-        # empty_out omitted to match brief's "12 action segments" expectation
+        (13, "empty_out", 60),
     ]
     eff = plan.expand_plan(norm)
-    # 12 actions + 11 transitions between them = 23 segments
-    assert len(eff) == 23
-    # total: empty_in(60) + 9*pos(40) + sit(40) + lie_supine(60) = 520 (actions)
-    #        + 11*TRANSITION_S_DEFAULT(10) = 110 (transitions) = 630s
-    assert sum(s.duration_s for s in eff) == 630.0
-    assert sum(1 for s in eff if s.state == "transition") == 11
+    # 13 actions + 12 transitions between them = 25 segments
+    assert len(eff) == 25
+    # total: 580s actions + 120s transitions = 700s
+    assert sum(s.duration_s for s in eff) == 700.0
+    assert sum(1 for s in eff if s.state == "transition") == 12
 
 
 def test_expand_test_plan_3_segments_70s():
