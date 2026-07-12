@@ -113,15 +113,12 @@ class PlanState:
 def draw_overlay(frame, state: PlanState, elapsed_sec: float):
     """Draw segment overlay in upper-right corner (in-place).
 
-    Color is determined by cur_state: yellow for "action", magenta for "transition".
+    Renders yellow overlay for action segments only. Transition overlay is
+    handled by a separate function in Task 3.
     """
     import cv2
     h, w = frame.shape[:2]
-    # Choose color based on current state
-    if state.cur_state == "transition":
-        box_color = (255, 0, 255)   # magenta for transition
-    else:
-        box_color = (0, 255, 255)   # yellow for action
+    box_color = (0, 255, 255)   # yellow for action segments
     line1 = f"Segment {state.cur_seg + 1}/{state.total_segments} — {state.cur_label}"
     line2 = f"● RECORDING  {elapsed_sec:.1f}s / {state.cur_duration}s"
     font, scale, thick, pad = cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1, 8
