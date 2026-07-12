@@ -17,6 +17,7 @@ from csi_pipe.mqtt_recorder import RecorderCore, wire_client  # noqa: E402
 from csi_pipe.store import SessionWriter  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "capture"))  # host/capture/
 from plan import parse_plan, expand_plan  # noqa: E402
+import plan as _plan_module  # for --no-transition runtime override (see main())
 
 
 def main():
@@ -30,7 +31,15 @@ def main():
     ap.add_argument("--status-period", type=float, default=5.0)
     ap.add_argument("--start-on-key", action="store_true", help="Wait for Enter before recording")
     ap.add_argument("--plan", default=None, help='Plan string (stderr log + HDF5 meta only)')
+    ap.add_argument("--no-transition", action="store_true",
+                    help="Disable plan.TRANSITION_S_DEFAULT (effective_plan == plan_list). "
+                         "Use for simplest 2-action recordings (dev_doc/19).")
     args = ap.parse_args()
+    # --no-transition: monkey-patch module constant so expand_plan() degrades to original plan.
+    # Keeps the transition feature code intact for future re-enable; just bypasses at runtime.
+    if args.no_transition:
+        _plan_module.TRANSITION_S_DEFAULT = 0
+        print("[rec] --no-transition: TRANSITION_S_DEFAULT=0 (effective_plan == plan_list)", flush=True)
     plan_list = parse_plan(args.plan) if args.plan else []
     effective_plan = expand_plan(plan_list) if plan_list else []
 

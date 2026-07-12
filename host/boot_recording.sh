@@ -54,12 +54,16 @@ case "$MODE" in
         PLAN="1:stand:30,2:squat:30"
         OUT_DIR="data/test"
         RAW_DIR="logs/test"
+        # 2026-07-12 (dev_doc/19): user wants simplest 2-action path, no transition buffer.
+        # effective_plan == plan_list (60s == boot --duration 60, no mismatch).
+        NO_TRANS_FLAG="--no-transition"
         ;;
     norm)
         DURATION=580
         PLAN="1:empty_in:60,2:pos1_set1:40,3:pos2_set1:40,4:pos3_set1:40,5:pos1_set2:40,6:pos2_set2:40,7:pos3_set2:40,8:pos1_set3:40,9:pos2_set3:40,10:pos3_set3:40,11:sit:40,12:lie_supine:60,13:empty_out:60"
         OUT_DIR="data"
         RAW_DIR="logs"
+        NO_TRANS_FLAG=""
         ;;
 esac
 
@@ -67,7 +71,7 @@ mkdir -p "$LOGDIR" "$OUT_DIR" "$RAW_DIR"
 # Cleanup any stale gate sentinel from a previous aborted run (per-mode)
 rm -f "${OUT_DIR}/.${SESSION}.gate"
 echo "=== boot (mode=$MODE session=$SESSION ts=$TS) $(date) ==="
-echo "    duration=${DURATION}s  plan=\"$(echo "$PLAN" | cut -c1-60)...\""
+echo "    duration=${DURATION}s  plan=\"$(echo "$PLAN" | cut -c1-60)...\"  no_transition=${NO_TRANS_FLAG:-off}"
 echo "    out=${OUT_DIR}/  raw=${RAW_DIR}/  log=${LOGDIR}/"
 
 # ① 预检
@@ -119,13 +123,13 @@ echo "✓ 3 bridges ready"
 "$PYTHON" host/capture/cam_capture.py \
     --camera 0 --backend any --out "$OUT_DIR" --session "$SESSION" --duration "$DURATION" \
     --width 640 --height 360 --fps 30 \
-    --plan "$PLAN" --start-on-key --overlay --status-period 1.0 \
+    --plan "$PLAN" --start-on-key --overlay --status-period 1.0 $NO_TRANS_FLAG \
     > "$LOGDIR/cam.log" 2>&1 &
 CAM_PID=$!
 
 "$PYTHON" host/recorder/recorder.py \
     --out "$OUT_DIR" --session "$SESSION" --duration "$DURATION" \
-    --plan "$PLAN" --start-on-key --status-period 1.0 \
+    --plan "$PLAN" --start-on-key --status-period 1.0 $NO_TRANS_FLAG \
     > "$LOGDIR/recorder.log" 2>&1 &
 REC_PID=$!
 

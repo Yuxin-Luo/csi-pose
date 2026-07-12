@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # host/
 from csi_host.cam_core import CamCore  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # host/capture/
 from plan import parse_plan, expand_plan, PlanState, draw_overlay, draw_overlay_transition  # noqa: E402
+import plan as _plan_module  # for --no-transition runtime override (see main())
 
 # --- Skeleton preview constants (mirrors host/tools/live_skeleton.py) ----
 # Search/track 2-mode simplified for cam_capture: detect every SEARCH_DET_EVERY
@@ -119,9 +120,17 @@ def main():
     ap.add_argument("--skeleton-device", default="cpu", choices=["cpu", "cuda", "auto"],
                     help="RTMDet+RTMPose inference device (default cpu)")
     ap.add_argument("--mqtt-host", default="127.0.0.1")
+    ap.add_argument("--no-transition", action="store_true",
+                    help="Disable plan.TRANSITION_S_DEFAULT (effective_plan == plan_list). "
+                         "Use for simplest 2-action recordings (dev_doc/19).")
     ap.add_argument("--mqtt-port", type=int, default=1883)
     ap.add_argument("--no-mqtt", action="store_true", help="Skip MQTT publish (mp4 only)")
     args = ap.parse_args()
+    # --no-transition: monkey-patch module constant so expand_plan() degrades to original plan.
+    # Keeps the transition feature code intact for future re-enable; just bypasses at runtime.
+    if args.no_transition:
+        _plan_module.TRANSITION_S_DEFAULT = 0
+        print("[cam] --no-transition: TRANSITION_S_DEFAULT=0 (effective_plan == plan_list)", flush=True)
     plan_list = parse_plan(args.plan) if args.plan else []
     effective_plan = expand_plan(plan_list) if plan_list else []
     plan_state = PlanState(segments=effective_plan) if effective_plan else None
