@@ -76,7 +76,7 @@ class Engine:
                                  self.infer_ms else 0.0),
                "e2e_ms": float(self.e2e_ms[-1]) if self.e2e_ms else 0.0,
                "drop": self.dropped, "motion": self.motion.energy(),
-               "random": self.est.random}
+               "random": self.est.random, "diag": self.est.diag}
         vf = self.video.frame_for(B_ns) if self.video else None
         return render(vf, xy, c, present=present, fall_state=state, hud=hud)
 
@@ -146,6 +146,10 @@ def run(argv=None):
     ap.add_argument("--mqtt-host")
     ap.add_argument("--save", metavar="MP4")
     ap.add_argument("--headless", action="store_true")
+    ap.add_argument("--diag-fill-missing", action="store_true",
+                    help="DIAG: zero-fill phase/rssi when ckpt needs them but rt pipeline "
+                         "cannot stream them. Predictions are NOT valid; this is a "
+                         "visualization hack to view any ckpt (dev_doc/20 §5.3).")
     ap.add_argument("--perf-out", default=str(_HERE.parent / "host" / "logs"
                                               / "rt_perf.json"))
     ap.add_argument("--duration", type=float, default=0.0,
@@ -162,7 +166,8 @@ def run(argv=None):
                          "(spec §overlay)")
 
     cfg = load_rt_config(args.config)
-    est = PoseEstimator(args.ckpt, random_weights=args.random_weights)
+    est = PoseEstimator(args.ckpt, random_weights=args.random_weights,
+                        diag_fill_missing=args.diag_fill_missing)
     video = ReplayVideo(args.replay, args.video, args.pairing) if args.video else None
     engine = Engine(est, cfg, force_present=args.random_weights, video=video)
     settle_ns = int(cfg["settle_ms"] * 1e6)

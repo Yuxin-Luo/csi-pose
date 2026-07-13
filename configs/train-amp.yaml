@@ -1,0 +1,7 @@
+# train-amp.yaml — s01-r1 test session, AMP-only (in_ch=280) for rt pipeline smoke.
+# Excludes --phase --rssi to keep in_ch=280 → rt/demo.py PoseEstimator matches ckpt.
+# Used by Step 5 rt smoke test (dev_doc/20).
+sessions:
+  - {h5: data/processed/s01-r1/s01-r1-20260712-161316-train.h5, role: train, type: example-t80}
+  - {h5: data/processed/s01-r1/s01-r1-20260712-161316-val.h5,   role: val,   type: example-v20}
+hyper: {batch: 32, epochs: 30, warmup: 2, lr: 1.0e-3, wd: 1.0e-4, knn_k: 5, seed: 0}

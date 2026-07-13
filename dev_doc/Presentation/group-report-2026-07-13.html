@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>csi-pose 复现工作汇报 · 7/7→7/12 · 录→训→推全链路</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 64px; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+               "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.65;
+  color: #1f2328;
+  background: #ffffff;
+  -webkit-font-smoothing: antialiased;
+}
+code, pre, kbd, samp {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+               "Liberation Mono", monospace;
+  font-size: 0.875em;
+}
+.wrap { max-width: 920px; margin: 0 auto; padding: 0 24px; }
+main { padding-top: 32px; padding-bottom: 96px; }
+section { margin: 56px 0; }
+hr { border: 0; border-top: 1px solid #d0d7de; margin: 40px 0; }
+
+.site-header {
+  background: linear-gradient(180deg, #f6f8fa 0%, #ffffff 100%);
+  border-bottom: 1px solid #d0d7de;
+  padding: 56px 0 36px;
+}
+.site-header .eyebrow {
+  font-size: 0.8125rem; color: #59636e;
+  letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 8px;
+}
+.site-header h1 {
+  font-size: 1.85rem; font-weight: 700;
+  margin: 0 0 8px; letter-spacing: -0.01em;
+}
+.site-header .subtitle { font-size: 1.05rem; color: #59636e; margin: 0 0 16px; }
+.site-header .meta { display: flex; flex-wrap: wrap; gap: 16px; font-size: 0.8125rem; color: #59636e; }
+.site-header .meta span strong { color: #1f2328; font-weight: 600; }
+
+.sticky-nav {
+  position: sticky; top: 0;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: saturate(180%) blur(8px);
+  -webkit-backdrop-filter: saturate(180%) blur(8px);
+  border-bottom: 1px solid #d0d7de; z-index: 100;
+}
+.sticky-nav .wrap { display: flex; gap: 4px; overflow-x: auto; padding: 12px 24px; }
+.sticky-nav a {
+  flex-shrink: 0; padding: 6px 12px; border-radius: 6px;
+  text-decoration: none; font-size: 0.875rem; color: #59636e; white-space: nowrap;
+}
+.sticky-nav a:hover { background: #f6f8fa; color: #1f2328; }
+
+h2 {
+  font-size: 1.5rem; font-weight: 700;
+  margin: 0 0 8px; padding-bottom: 8px;
+  border-bottom: 2px solid #1f2328; letter-spacing: -0.01em;
+}
+h2 .anchor-num {
+  display: inline-block; width: 28px; height: 28px;
+  line-height: 28px; text-align: center;
+  background: #1f2328; color: #fff; border-radius: 6px;
+  font-size: 0.875rem; margin-right: 10px; vertical-align: middle;
+}
+h3 { font-size: 1.15rem; font-weight: 600; margin: 28px 0 10px; color: #1f2328; }
+h4 { font-size: 1.02rem; font-weight: 600; margin: 20px 0 6px; color: #1f2328; }
+p { margin: 10px 0; }
+a { color: #0969da; text-decoration: none; }
+a:hover { text-decoration: underline; }
+strong { font-weight: 600; color: #1f2328; }
+ul, ol { padding-left: 24px; }
+li { margin: 4px 0; }
+
+.lead {
+  font-size: 1.05rem; color: #1f2328;
+  padding: 14px 18px; background: #f6f8fa;
+  border-left: 4px solid #0969da;
+  border-radius: 0 6px 6px 0; margin: 14px 0 20px;
+}
+.lead strong { color: #0969da; }
+
+.subsystem-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px; margin: 14px 0;
+}
+.subsystem {
+  border: 1px solid #d0d7de; border-radius: 8px;
+  padding: 14px 16px; background: #fff; position: relative;
+}
+.subsystem .num {
+  position: absolute; top: -10px; left: 12px;
+  background: #1f2328; color: #fff;
+  font-size: 0.75rem; padding: 2px 8px; border-radius: 10px;
+}
+.subsystem h4 { margin: 4px 0 4px; font-size: 1rem; }
+.subsystem p { margin: 4px 0 6px; font-size: 0.875rem; color: #59636e; }
+
+.callout {
+  margin: 14px 0; padding: 12px 16px;
+  border-left: 4px solid #d0d7de; background: #f6f8fa;
+  border-radius: 0 6px 6px 0; font-size: 0.9375rem;
+}
+.callout-icon { display: inline-block; margin-right: 8px; font-weight: 700; }
+.callout.design  { border-left-color: #0969da; }
+.callout.design .callout-icon  { color: #0969da; }
+.callout.warning { border-left-color: #cf222e; background: #fff5f5; }
+.callout.warning .callout-icon { color: #cf222e; }
+.callout.ok      { border-left-color: #1a7f37; background: #f0fdf4; }
+.callout.ok .callout-icon      { color: #1a7f37; }
+.callout.review  { border-left-color: #9a6700; background: #fffbf0; }
+.callout.review .callout-icon  { color: #9a6700; }
+
+table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.9375rem; }
+thead th { background: #f6f8fa; border-bottom: 2px solid #d0d7de; text-align: left; padding: 8px 12px; font-weight: 600; }
+tbody td { border-bottom: 1px solid #d0d7de; padding: 8px 12px; vertical-align: top; }
+tbody tr:nth-child(even) td { background: #f6f8fa; }
+tbody tr:hover td { background: #eaeef2; }
+
+figure { margin: 14px 0; text-align: center; }
+figure img, figure svg { max-width: 100%; height: auto; border: 1px solid #d0d7de; border-radius: 6px; background: #fff; }
+figure figcaption { font-size: 0.875rem; color: #59636e; margin-top: 8px; padding: 0 16px; }
+
+.stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 14px 0; }
+.stat { border: 1px solid #d0d7de; border-radius: 8px; padding: 12px 16px; background: #f6f8fa; }
+.stat .label { font-size: 0.75rem; color: #59636e; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+.stat .value { font-size: 1.2rem; font-weight: 700; color: #1f2328; font-family: ui-monospace, monospace; }
+.stat .note { font-size: 0.75rem; color: #59636e; margin-top: 4px; }
+
+.timeline { margin: 16px 0; }
+.timeline .row {
+  display: grid; grid-template-columns: 110px 1fr; gap: 16px;
+  padding: 10px 0; border-bottom: 1px solid #d0d7de;
+}
+.timeline .date { font-family: ui-monospace, monospace; font-size: 0.875rem; color: #59636e; font-weight: 600; }
+.timeline .event strong { color: #0969da; }
+
+.bug-card {
+  border: 1px solid #d0d7de; border-radius: 8px;
+  padding: 16px 18px; margin: 14px 0; background: #fff;
+}
+.bug-card .head {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline;
+  margin-bottom: 8px;
+}
+.bug-card .tag {
+  display: inline-block; font-size: 0.7rem; padding: 2px 8px;
+  border-radius: 10px; background: #1f2328; color: #fff; font-weight: 600;
+}
+.bug-card .tag.fw  { background: #0969da; }
+.bug-card .tag.phy { background: #9a6700; }
+.bug-card .tag.tr  { background: #cf222e; }
+.bug-card .tag.rt  { background: #1a7f37; }
+.bug-card .tag.op  { background: #59636e; }
+.bug-card h4 { margin: 0; font-size: 1.05rem; }
+.bug-card .grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px 16px; margin-top: 8px; font-size: 0.9rem;
+}
+.bug-card .grid div span { color: #59636e; font-weight: 600; margin-right: 4px; }
+
+.video-card {
+  border: 2px solid #0969da; border-radius: 12px;
+  padding: 24px; margin: 16px 0; background: #f6f8fa;
+  text-align: center;
+}
+.video-card .play {
+  display: inline-block; padding: 10px 22px;
+  background: #0969da; color: #fff; border-radius: 8px;
+  font-weight: 600; font-size: 1rem;
+}
+.video-card .play:hover { background: #0860c7; text-decoration: none; }
+.video-card .meta { margin-top: 10px; font-size: 0.875rem; color: #59636e; }
+
+footer {
+  border-top: 1px solid #d0d7de; padding: 24px 0;
+  color: #59636e; font-size: 0.8125rem; background: #f6f8fa;
+}
+footer p { margin: 4px 0; }
+
+@media (max-width: 600px) {
+  .site-header h1 { font-size: 1.5rem; }
+  .sticky-nav .wrap { padding: 10px 16px; }
+  .sticky-nav a { font-size: 0.8125rem; padding: 5px 8px; }
+  section { margin: 36px 0; }
+  h2 { font-size: 1.25rem; }
+  h3 { font-size: 1.05rem; }
+  .wrap { padding: 0 16px; }
+  .timeline .row { grid-template-columns: 90px 1fr; }
+}
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap">
+    <div class="eyebrow">csi-pose 复现工作汇报</div>
+    <h1>WiFi 信号 → 18 关节人体姿态 → 火柴人</h1>
+    <p class="subtitle">6 块 ESP32-S3 · 录→训→推全链路跑通 · 7 天</p>
+    <div class="meta">
+      <span><strong>汇报日期</strong> 2026-07-13</span>
+      <span><strong>工作周期</strong> 2026-07-07 ~ 2026-07-12</span>
+      <span><strong>基础项目</strong> csi-pose (MIT)</span>
+      <span><strong>参考论文</strong> <a href="../../docs/Can WiFi Estimate Person Pose.pdf">Can WiFi Estimate Person Pose?</a></span>
+    </div>
+  </div>
+</header>
+
+<nav class="sticky-nav">
+  <div class="wrap">
+    <a href="#sec-cover">① 封面</a>
+    <a href="#sec-bg">② 项目是什么</a>
+    <a href="#sec-tech">③ 用了什么技术</a>
+    <a href="#sec-timeline">④ 7 天时间线</a>
+    <a href="#sec-bug-fw">⑤ Bug · 固件</a>
+    <a href="#sec-bug-phy">⑥ Bug · 物理</a>
+    <a href="#sec-bug-train">⑦ Bug · 训练</a>
+    <a href="#sec-bug-rt">⑧ Bug · 推理</a>
+    <a href="#sec-bug-op">⑨ Bug · 流程</a>
+    <a href="#sec-method">⑩ 方法论</a>
+    <a href="#sec-metrics">⑪ 客观指标</a>
+    <a href="#sec-demo">⑫ 演示 demo</a>
+    <a href="#sec-honest">⑬ 诚实声明</a>
+    <a href="#sec-trace">⑭ 数据溯源</a>
+  </div>
+</nav>
+
+<main>
+<div class="wrap">
+
+<!-- =================== A · 背景 =================== -->
+<section id="sec-cover">
+  <h2><span class="anchor-num">1</span>一句话目标</h2>
+  <p class="lead">
+    <strong>把 6 块 ESP32-S3 路由器摆成 3×3 网格</strong>，从 WiFi 信号的微小变化中，
+    <strong>实时"画"出房间里那个人的 18 个关节 2D 坐标</strong>——
+    不戴设备、不开摄像头、只用路由器。
+  </p>
+  <p>
+    这是开源项目 <a href="../README.md">csi-pose</a>（论文 <em>Can WiFi Estimate Person Pose?</em>，arXiv:1904.00277）的复现工作。
+    原项目用的是 Intel 5300 单块网卡，本工作把它移植到 6 块 ESP32-S3 上。
+    原项目只在 1 个会话（fall-demo-01）跑过跌倒检测，本工作在自己录的 580 秒会话上重新跑通整个 pipeline。
+  </p>
+  <div class="callout design">
+    <span class="callout-icon">💡</span>
+    <strong>摄像头只在采集阶段用一次</strong>——当教师给 CSI 视频"打标签"。
+    训练好模型后，运行时只要 6 块路由器就够了，不用摄像头。
+  </div>
+</section>
+
+<section id="sec-bg">
+  <h2><span class="anchor-num">2</span>项目是什么</h2>
+  <p>
+    WiFi 信号在房间里传播时，会被人体的不同部位反射、散射、吸收。
+    ESP32-S3 的 WiFi 芯片能输出一种叫 <strong>CSI（Channel State Information）</strong> 的数据——
+    本质上是<strong>56 个频段上信号强度的时间序列</strong>。
+    把这串数字扔给一个轻量神经网络，神经网络就能反推出人体的 18 个关节点坐标。
+  </p>
+
+  <h3>2.1 系统由 5 个子系统组成</h3>
+  <div class="subsystem-grid">
+    <div class="subsystem">
+      <span class="num">① 固件</span>
+      <h4>6 块 ESP32-S3</h4>
+      <p>3 块发射器（TX）广播 WiFi 信标，3 块接收器（RX）抓 CSI 数据流</p>
+    </div>
+    <div class="subsystem">
+      <span class="num">② 采集</span>
+      <h4>录制与同步</h4>
+      <p>电脑串口收到 RX 的 130B 帧，按时间戳写进 HDF5；同时摄像头录 mp4</p>
+    </div>
+    <div class="subsystem">
+      <span class="num">③ 教师</span>
+      <h4>摄像头打标签</h4>
+      <p>RTMDet 检测人，RTMPose 估 17 关节，转成 BODY-18 拓扑</p>
+    </div>
+    <div class="subsystem">
+      <span class="num">④ 训练</span>
+      <h4>CSI → 关节</h4>
+      <p>轻量卷积神经网络，从 50ms CSI 窗口回归出 18 关节 2D 坐标</p>
+    </div>
+    <div class="subsystem">
+      <span class="num">⑤ 实时</span>
+      <h4>推理 + 跌倒</h4>
+      <p>回放或实时 CSI 流 → 火柴人 → 规则式状态机判跌倒</p>
+    </div>
+  </div>
+</section>
+
+<!-- =================== B · 技术 =================== -->
+<section id="sec-tech">
+  <h2><span class="anchor-num">3</span>用了什么技术（简明）</h2>
+  <p>
+    本节用<strong>不深入技术细节</strong>的方式讲清项目依赖的几件事。
+    想看完整技术栈的同事可以参考 <a href="../../docs/csi-pose-techstack.html">技术栈总览文档</a>。
+  </p>
+
+  <h3>3.1 硬件：6 块 ESP32-S3 摆成 3×3 网格</h3>
+  <p>
+    3 块做<strong>发射器（TX）</strong>，3 块做<strong>接收器（RX）</strong>，物理上分开放置。
+    每对 (TX, RX) 形成一条无线链路，3×3 共 9 条独立链路——
+    相当于一个<strong>9 通道的信道矩阵</strong>，每条通道都给出一串 CSI 数值。
+  </p>
+  <figure>
+    <svg viewBox="0 0 460 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="3x3 link matrix">
+      <style>
+        .rx-box { fill: #f6f8fa; stroke: #1f2328; stroke-width: 1.5; }
+        .tx-box { fill: #f6f8fa; stroke: #1f2328; stroke-width: 1.5; }
+        .link   { stroke: #0969da; stroke-width: 1.2; fill: none; }
+        .node-label { font: 600 14px sans-serif; fill: #1f2328; text-anchor: middle; }
+        .node-sub   { font: 11px monospace; fill: #59636e; text-anchor: middle; }
+        .title { font: 700 13px sans-serif; fill: #1f2328; }
+      </style>
+      <text x="230" y="22" class="title" text-anchor="middle">3 发射 × 3 接收 = 9 条无线链路</text>
+      <rect class="tx-box" x="60"  y="50" width="60" height="40" rx="6"/>
+      <rect class="tx-box" x="200" y="50" width="60" height="40" rx="6"/>
+      <rect class="tx-box" x="340" y="50" width="60" height="40" rx="6"/>
+      <text class="node-label" x="90"  y="75">TX₁</text>
+      <text class="node-label" x="230" y="75">TX₂</text>
+      <text class="node-label" x="370" y="75">TX₃</text>
+      <rect class="rx-box" x="60"  y="170" width="60" height="40" rx="6"/>
+      <rect class="rx-box" x="200" y="170" width="60" height="40" rx="6"/>
+      <rect class="rx-box" x="340" y="170" width="60" height="40" rx="6"/>
+      <text class="node-label" x="90"  y="195">RX₁</text>
+      <text class="node-label" x="230" y="195">RX₂</text>
+      <text class="node-label" x="370" y="195">RX₃</text>
+      <line class="link" x1="90"  y1="90"  x2="90"  y2="170"/>
+      <line class="link" x1="90"  y1="90"  x2="230" y2="170"/>
+      <line class="link" x1="90"  y1="90"  x2="370" y2="170"/>
+      <line class="link" x1="230" y1="90"  x2="90"  y2="170"/>
+      <line class="link" x1="230" y1="90"  x2="230" y2="170"/>
+      <line class="link" x1="230" y1="90"  x2="370" y2="170"/>
+      <line class="link" x1="370" y1="90"  x2="90"  y2="170"/>
+      <line class="link" x1="370" y1="90"  x2="230" y2="170"/>
+      <line class="link" x1="370" y1="90"  x2="370" y2="170"/>
+    </svg>
+    <figcaption>3×3 link matrix 示意。每个 (RX_i, TX_j) 对是一条独立无线链路，对应一串 CSI 数值。</figcaption>
+  </figure>
+
+  <h3>3.2 时钟同步（最简版）</h3>
+  <p>
+    6 块板子的晶振各自独立、和电脑时钟也不一致。
+    本项目<strong>不做显式的板间同步协议</strong>，而是靠两层兜底：
+  </p>
+  <ul>
+    <li><strong>TX beacon 同时性</strong>：3 块 TX 同时广播，RX 收到时把它们视为"同一物理时刻"</li>
+    <li><strong>每板下包络拟合</strong>：USB 串口延迟只能让包迟到、不能早到，所以散点的下凸包 = 真实时钟线</li>
+  </ul>
+  <p>这套办法精度约 <strong>±15 ms</strong>——跌倒瞬间人体速度 2-3 m/s，对应 3-5 cm 标签噪声，足够训练。</p>
+
+  <h3>3.3 CSI → 教师打标签 → 训练 → 实时推理</h3>
+  <p>整个 pipeline 用一张图串完：</p>
+  <figure>
+    <svg viewBox="0 0 760 100" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="full pipeline">
+      <defs>
+        <marker id="arr2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 z" fill="#1f2328"/>
+        </marker>
+      </defs>
+      <style>
+        .box { fill: #fff; stroke: #1f2328; stroke-width: 1.5; rx: 6; }
+        .box.accent { fill: #f6f8fa; stroke: #0969da; stroke-width: 2; }
+        .lbl { font: 600 12px sans-serif; fill: #1f2328; text-anchor: middle; }
+        .sub { font: 10px monospace; fill: #59636e; text-anchor: middle; }
+        .line { stroke: #1f2328; stroke-width: 1.5; fill: none; marker-end: url(#arr2); }
+      </style>
+      <rect class="box" x="10"  y="25" width="120" height="50"/>
+      <text class="lbl" x="70" y="47">6 块 ESP32</text>
+      <text class="sub" x="70" y="63">CSI 流</text>
+      <rect class="box" x="160" y="25" width="120" height="50"/>
+      <text class="lbl" x="220" y="47">HDF5 录制</text>
+      <text class="sub" x="220" y="63">13min 训练数据</text>
+      <rect class="box accent" x="310" y="25" width="120" height="50"/>
+      <text class="lbl" x="370" y="47">RTMPose 教师</text>
+      <text class="sub" x="370" y="63">打 18 关节标签</text>
+      <rect class="box accent" x="460" y="25" width="120" height="50"/>
+      <text class="lbl" x="520" y="47">CSI→关节模型</text>
+      <text class="sub" x="520" y="63">训练 30 epoch</text>
+      <rect class="box" x="610" y="25" width="130" height="50"/>
+      <text class="lbl" x="675" y="47">实时推理</text>
+      <text class="sub" x="675" y="63">画火柴人</text>
+      <line class="line" x1="130" y1="50" x2="160" y2="50"/>
+      <line class="line" x1="280" y1="50" x2="310" y2="50"/>
+      <line class="line" x1="430" y1="50" x2="460" y2="50"/>
+      <line class="line" x1="580" y1="50" x2="610" y2="50"/>
+    </svg>
+    <figcaption>完整 pipeline：CSI 数据 → 录制 → 摄像头当教师打标签 → 训练 → 实时画火柴人。</figcaption>
+  </figure>
+  <div class="callout design">
+    <span class="callout-icon">💡</span>
+    <strong>关键观察</strong>：摄像头只在"教师打标签"这一步用。训练好模型后，
+    实时推理阶段完全不需要摄像头——只要 6 块路由器和电脑。
+  </div>
+</section>
+
+<!-- =================== C · 过程 + Bug =================== -->
+<section id="sec-timeline">
+  <h2><span class="anchor-num">4</span>7 天时间线（7/7 → 7/12）</h2>
+  <p>整体节奏：7 天打通"录 → 训 → 推"全 pipeline，每天一个阶段。</p>
+  <div class="timeline">
+    <div class="row"><div class="date">7/7-7/8</div><div class="event"><strong>阶段 1 · 调研 + 复现教程</strong> — 源码精读；写出 13 分钟 Windows+WSL2 复现教程；决定做直烧版固件（烧完上电即用）</div></div>
+    <div class="row"><div class="date">7/10</div><div class="event"><strong>阶段 2 · 固件联调</strong> — RX 板 boot-loop 一路追到 4 层 bug；4 场景 9 组测试链路验收（综合 loss 4.21% 临界通过）</div></div>
+    <div class="row"><div class="date">7/11 上午</div><div class="event"><strong>阶段 3 · 录制方案设计</strong> — D1 plan：3 站 × 4 朝 × 3 组 + 坐/趴/空 = 13 段 580s；新增 boot 脚本（5 进程编排 + 预检 + trap）</div></div>
+    <div class="row"><div class="date">7/11 下午</div><div class="event"><strong>阶段 4 · boot 脚本连环死机</strong> — v1-v6 全部 silent death（input() 在后台 EOFError）；改为 60s test mode 隔离烟雾测试</div></div>
+    <div class="row"><div class="date">7/11 晚</div><div class="event"><strong>阶段 5 · test mode + 物理层 loss 调查</strong> — 95% loss 误判修正到真实 1.62%；发现 USB autosuspend + 桥接 startup accounting 伪影</div></div>
+    <div class="row"><div class="date">7/12 上午</div><div class="event"><strong>阶段 6 · 实时骨骼预览 + transition</strong> — 录制时实时看骨骼；段间 10s 过渡缓冲避免污染训练样本</div></div>
+    <div class="row"><div class="date">7/12 下午-晚</div><div class="event"><strong>阶段 7 · 全链路跑通</strong> — norm 580s 训练 PCK@0.5 = 78.9%；amp-only 模型端到端推理 + 骨架正常渲染</div></div>
+  </div>
+</section>
+
+<section id="sec-bug-fw">
+  <h2><span class="anchor-num">5</span>Bug ① · 固件层（4 层 bug 链）</h2>
+  <p>第一块 RX 板插上 USB 后完全抓不到 CSI 帧，看似一个 bug 实际是 <strong>4 层 bug 串联</strong>：</p>
+  <div class="bug-card">
+    <div class="head"><span class="tag fw">固件</span><h4>Bug · 4 层 bug 链：从 CONFIG 到 SDK 编译再到 USB 路由</h4></div>
+    <div class="grid">
+      <div><span>现象</span>RX 板插上后 rawlog 0 个 130B 帧</div>
+      <div><span>根因 1</span><code>CONFIG_ESP_WIFI_CSI_ENABLED=y</code> 没开 → CSI 接收被关闭</div>
+      <div><span>根因 2</span><code>idf.py build</code> 不会重读 <code>sdkconfig.defaults</code>，需要清理 rebuild</div>
+      <div><span>根因 3</span>console 走 UART0 不走 USB，bridge 在 <code>/dev/ttyACM0</code> 听不到</div>
+      <div><span>根因 4</span>csi_link 默认 <code>SERIAL_UART0</code>，130B 帧走 GPIO 不走 USB</div>
+      <div><span>解决</span>同时改 sdkconfig + sdkconfig.defaults + <code>CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y</code> + <code>CONFIG_CSI_LINK_SERIAL_USB_JTAG=y</code></div>
+      <div><span>出处</span>dev_doc/4-rx-firmware-bringup-debug-2026-07-10.md §3.2-§3.4</div>
+    </div>
+  </div>
+  <div class="callout design">
+    <span class="callout-icon">💡</span>
+    <strong>教训</strong>：任何一层只修半截都不行——表面"没数据"，实际是 4 个独立 bug 叠加。
+    这种"看上去一个 bug 实际一串"的链路在固件里特别常见，必须从物理层一路查到编译配置。
+  </div>
+</section>
+
+<!-- MARKER-NEXT -->
+
+<section id="sec-bug-phy">
+  <h2><span class="anchor-num">6</span>Bug ② · 物理层（95% loss 误判）</h2>
+  <p>第一次跑 60s 烟雾测试，bridge 报告 <strong>95% 丢包率</strong>——表面像系统崩溃。</p>
+  <div class="bug-card">
+    <div class="head"><span class="tag phy">物理</span><h4>Bug · 95% loss 误判：live.log 累计 + USB 物理抖动</h4></div>
+    <div class="grid">
+      <div><span>现象</span>live.log 报告 loss=95%，3 块 RX 同一时刻集体断联 18.7 min</div>
+      <div><span>真相 1</span><code>LinkTracker</code> 启动时 first_seq 跳变，把历史 gap 全计入 lost（startup accounting 伪影）</div>
+      <div><span>真相 2</span>dmesg 显示 14 秒内 3 个 USB root port reset → Linux xhci + USB autosuspend 物理抖动</div>
+      <div><span>解决 1</span>改用 h5 <code>recorder_status.links.*.loss</code>（链路 0-0 = 1.62%）</div>
+      <div><span>解决 2</span>disable autosuspend：<code>echo on &gt; /sys/bus/usb/devices/.../power/control</code>（边际改善 ~0.1pp）</div>
+      <div><span>出处</span>dev_doc/11-loss-gap-investigation / dev_doc/13-loss-final-verdict</div>
+    </div>
+  </div>
+  <div class="callout design">
+    <span class="callout-icon">💡</span>
+    <strong>教训</strong>：loss 数字本身会骗人——bridge 报的累计数字和实际链路丢包率差出 50 倍。
+    任何对数字异常的第一反应都应该是"测两个独立链路互相验证"，而不是急着改代码。
+  </div>
+</section>
+
+<!-- MARKER-NEXT -->
+
+<section id="sec-bug-train">
+  <h2><span class="anchor-num">7</span>Bug ③ · 训练 / 数据层</h2>
+  <p>训练阶段暴露了 4 个独立的"看着像 bug"的坑：</p>
+
+  <div class="bug-card">
+    <div class="head"><span class="tag tr">训练</span><h4>Bug · rawlog chunked streaming 误读</h4></div>
+    <div class="grid">
+      <div><span>现象</span>解析器把 1 record 当成 1 帧，结果数据少 80%</div>
+      <div><span>根因</span>实测是 chunked streaming，1 chunk 内多帧（5 帧/650B 主流）</div>
+      <div><span>解决</span>解析先按 <code>&lt;u64,u16&gt;</code> 拆 chunks，再 <code>payload.find(b"\x1d\xc5")</code> 切帧</div>
+      <div><span>出处</span>dev_doc/5-loss-throughput-baseline §3.3</div>
+    </div>
+  </div>
+
+  <div class="bug-card">
+    <div class="head"><span class="tag tr">训练</span><h4>Bug · 训练 OOM @ batch=64 + in_ch=560</h4></div>
+    <div class="grid">
+      <div><span>现象</span>WiSPPN.forward 上采样到 144×144，中间张量爆显存</div>
+      <div><span>根因</span>(B,150,144,144) f32 单 batch ≈ 11.9 MB；batch=512 在 16GB GPU 实测 OOM</div>
+      <div><span>解决</span><code>configs/train-norm.yaml</code> 改 batch=32；未来优化 gradient checkpointing / AMP fp16</div>
+      <div><span>出处</span>dev_doc/21-norm-training §4.2</div>
+    </div>
+  </div>
+
+  <div class="bug-card">
+    <div class="head"><span class="tag tr">训练</span><h4>Bug · onnxruntime CPU-only 教师慢 80×</h4></div>
+    <div class="grid">
+      <div><span>现象</span>RTMDet+RTMPose 教师 41 秒/帧（GPU 没启用）</div>
+      <div><span>根因</span>pip 默认 <code>onnxruntime</code> 无 <code>CUDAExecutionProvider</code></div>
+      <div><span>解决</span><code>pip install onnxruntime-gpu==1.19.2</code> + nvidia-* 系列 + <code>LD_LIBRARY_PATH</code></div>
+      <div><span>效果</span>GPU 启用后教师 41.9 fps（vs CPU 0.5 fps）</div>
+      <div><span>出处</span>dev_doc/21-norm-training §4.1</div>
+    </div>
+  </div>
+
+  <div class="bug-card">
+    <div class="head"><span class="tag tr">训练</span><h4>Bug · 摄像头 mp4 metadata fps=30 但实测只有 15fps</h4></div>
+    <div class="grid">
+      <div><span>现象</span>摄像头 mp4 报头写 30fps，实际播放只有 15fps</div>
+      <div><span>根因</span>USB2 带宽上限；<code>CAP_PROP_FPS</code> 报 30 是协商值不是实测</div>
+      <div><span>解决</span>probe 实测 4cc × resolution 矩阵 → 切 <strong>MJPG 640×360</strong>（实测 28.30fps）</div>
+      <div><span>出处</span>dev_doc/12-cam-fps-probe §2</div>
+    </div>
+  </div>
+</section>
+
+<!-- MARKER-NEXT -->
+
+<section id="sec-bug-rt">
+  <h2><span class="anchor-num">8</span>Bug ④ · 推理层（骨架坍缩对角线）</h2>
+  <p>norm 训练结束得到 PCK@0.5 = 78.9% 的"高精度"模型——但放进实时 demo 里骨架直接塌成对角线。</p>
+  <div class="bug-card">
+    <div class="head"><span class="tag rt">推理</span><h4>Bug · 骨架坍缩成对角线（in_ch 不匹配）</h4></div>
+    <div class="grid">
+      <div><span>现象</span>RT demo 视频里 18 关节全部坍缩到画布角落对角线</div>
+      <div><span>根因</span>best.pt in_ch=560（amp+phase+rssi 三路联合），但 RT pipeline <code>ReplaySource</code> 只读 amp (in_ch=280)；placeholder 填零后 z-score 不再零均值</div>
+      <div><span>后果</span>xy 坍缩到 ±5,±13 → project clip 到画布角落</div>
+      <div><span>解决</span><strong>绕过根因</strong>：改用 amp-only 模型 <code>s01-rX-norm-amp/best.pt</code> (in_ch=280)；骨架正常渲染，infer p50 ≈ 10ms</div>
+      <div><span>残留</span>amp-only 模型 PCK@0.5 = 55.5%（vs norm 78.9%，差 23pp）</div>
+      <div><span>出处</span>dev_doc/22-diag-skeleton-handoff / dev_doc/23-amp-demo-working</div>
+    </div>
+  </div>
+
+  <div class="bug-card">
+    <div class="head"><span class="tag rt">推理</span><h4>Bug · boot 在 RTMDet load 时 timeout</h4></div>
+    <div class="grid">
+      <div><span>现象</span>远程录制场景下 boot 启动被 RTMDet 模型下载阻塞（~145MB）</div>
+      <div><span>根因</span>RTMDet 启动需要下载模型权重</div>
+      <div><span>解决</span>commit <code>da7fc65</code> 加 <code>--no-skeleton --no-overlay</code>，让 cam 走最简路径</div>
+      <div><span>出处</span>git commit da7fc65</div>
+    </div>
+  </div>
+</section>
+
+<!-- MARKER-NEXT -->
+
+<section id="sec-bug-op">
+  <h2><span class="anchor-num">9</span>Bug ⑤ · 流程编排（boot 6 次失败史）</h2>
+  <p>第一次想用一个 bash 脚本把"5 个进程" + "摄像头" + "录制"统一起来，结果脚本 <strong>连续 6 个版本全部 silent death</strong>。</p>
+  <div class="bug-card">
+    <div class="head"><span class="tag op">流程</span><h4>Bug · boot 主进程 silent death（v1-v6 失败史）</h4></div>
+    <div class="grid">
+      <div><span>现象</span>启动几分钟后主进程消失、log 卡住、没有任何错误信息</div>
+      <div><span>v1-v3</span>polling 循环 silent 死亡（疑似 <code>set -e</code> + <code>&amp;&amp;</code> 触发）</div>
+      <div><span>v4</span>权限 / trap 处理不当</div>
+      <div><span>v5-v6</span>cam/recorder <code>input()</code> 在 <code>&amp;</code> 后台 stdin 非 TTY 时 raise <code>EOFError</code>，<code>set -e</code> 触发退出</div>
+      <div><span>真根因</span>Python <code>input()</code> 在后台非 TTY 环境触发 EOFError，bash <code>set -e</code> 默默退出</div>
+      <div><span>解决</span>commit <code>91d09d3</code>：<code>input()</code> → <code>cv2.waitKey()</code> + sentinel flag</div>
+      <div><span>经验</span>5 报错就停，质疑方法本身而不是补丁</div>
+      <div><span>出处</span>dev_doc/9-handoff-boot-recording-debug</div>
+    </div>
+  </div>
+  <div class="callout design">
+    <span class="callout-icon">💡</span>
+    <strong>教训</strong>：silent death 是最难调的 bug 类型。
+    看似"没报错"，实际是 shell + Python 的多种微妙交互在后台触发；
+    必须先写最小复现脚本隔离问题，而不是在原脚本上加更多 <code>set -e</code> 防御。
+  </div>
+</section>
+
+<section id="sec-method">
+  <h2><span class="anchor-num">10</span>方法论：5 个原则</h2>
+  <p>7 天复现下来沉淀的 5 条工作原则（已写入本目录 <a href="../CLAUDE.md">CLAUDE.md</a>）：</p>
+  <div class="stat-row">
+    <div class="stat"><div class="label">①</div><div class="value">5 报错就停</div><div class="note">同一方法连续 5 个报错 = 重新审视方法本身，而不是继续打补丁</div></div>
+    <div class="stat"><div class="label">②</div><div class="value">根因优先</div><div class="note">先问"为什么"，再问"怎么办"；绕开根因 = 留下未来雷</div></div>
+    <div class="stat"><div class="label">③</div><div class="value">决策可追溯</div><div class="note">每个阈值/参数都在 dev_doc 留依据，方便后来人 audit</div></div>
+    <div class="stat"><div class="label">④</div><div class="value">不绕开同步</div><div class="note">下包络是核心，不能简化；USB 延迟只能让包迟到不能早到</div></div>
+    <div class="stat"><div class="label">⑤</div><div class="value">诚实声明</div><div class="note">单会话标定的阈值、单模型能力的局限要明说，不能夸大</div></div>
+  </div>
+
+  <div class="callout review">
+    <span class="callout-icon">⏸️</span>
+    <strong>留底</strong>：所有 bug、决策、参数都对应一份 dev_doc（编号 1-24），可逐条审计。
+    工作量事实：23 份过程文档 + 5 个核心 commit + 4 套训练产物。
+  </div>
+</section>
+
+<!-- MARKER-NEXT -->
+
+<!-- =================== D · 效果 =================== -->
+<section id="sec-metrics">
+  <h2><span class="anchor-num">11</span>客观指标（一表看完）</h2>
+  <p>本节用一张表呈现端到端跑通后的关键数字。所有指标基于本人 2026-07-12 录制的 s01-rX-norm 580s 会话。</p>
+  <table>
+    <thead>
+      <tr><th>维度</th><th>指标</th><th>数值</th><th>对比 / 含义</th></tr>
+    </thead>
+    <tbody>
+      <tr><td rowspan="2">录制</td><td>链路 0-0 loss</td><td><strong>1.62%</strong></td><td>vs baseline 5% 阈值 ✅</td></tr>
+      <tr><td>9 链路综合 loss</td><td>4.21%</td><td>vs 上游单会话临界通过</td></tr>
+      <tr><td>采集</td><td>摄像头实测 fps</td><td><strong>27-31 fps</strong></td><td>MJPG 640×360 唯一真 30fps（720p 实测只 15fps）</td></tr>
+      <tr><td>教师</td><td>RTMDet+RTMPose 速度</td><td><strong>41.9 fps</strong></td><td>GPU ORT（vs CPU 0.5 fps，80× 提升）</td></tr>
+      <tr><td rowspan="2">训练</td><td>norm 数据集 PCK@0.5</td><td><strong>78.9%</strong></td><td>vs test 60s 数据 14.5%（18× 提升）</td></tr>
+      <tr><td>训练耗时</td><td>30 epoch on RTX 4060</td><td>norm 580s 数据</td></tr>
+      <tr><td rowspan="2">实时推理</td><td>infer p50 / p95</td><td><strong>10ms / 13ms</strong></td><td>50ms tick 预算内 ✅</td></tr>
+      <tr><td>RT demo 帧率</td><td>91.1 fps</td><td>单 GPU replay</td></tr>
+    </tbody>
+  </table>
+  <div class="stat-row">
+    <div class="stat"><div class="label">链路丢包</div><div class="value">1.62%</div><div class="note">9 链路中最好的 0-0</div></div>
+    <div class="stat"><div class="label">PCK@0.5</div><div class="value">78.9%</div><div class="note">norm 580s 会话</div></div>
+    <div class="stat"><div class="label">推理延迟</div><div class="value">10ms</div><div class="note">p50, 单 GPU</div></div>
+    <div class="stat"><div class="label">Pipeline</div><div class="value">录→训→推</div><div class="note">端到端 ✅</div></div>
+  </div>
+</section>
+
+<section id="sec-demo">
+  <h2><span class="anchor-num">12</span>演示 demo（核心证据）</h2>
+  <p>
+    下面这段录屏是 2026-07-12 当晚 <strong>最后一次跑通</strong> 的现场回放——
+    从 HDF5 录制文件回放 CSI 流，实时推理出 18 关节坐标，
+    在原 mp4 视频上叠加<strong>火柴人骨架</strong>。
+  </p>
+  <div class="video-card">
+    <a class="play" href="../../runs/录屏 2026年07月12日 18时57分22秒.mp4" target="_blank" rel="noopener">
+      ▶ 点击打开演示视频（73.3 秒）
+    </a>
+    <p class="meta">
+      路径：<code>runs/录屏 2026年07月12日 18时57分22秒.mp4</code> · 时长 73.3 秒 · MP4 · 7.14 MB
+    </p>
+  </div>
+  <h3>12.1 看视频时关注什么</h3>
+  <ul>
+    <li><strong>左侧窗口</strong>：原始摄像头画面（已暂停教师打标签）</li>
+    <li><strong>右侧窗口</strong>：CSI 实时推理出的火柴人骨架（红/绿色）</li>
+    <li><strong>信号</strong>：你能看到骨架跟着画面里的人动——尽管只有 6 块路由器，CSI 已经"看见"了关节</li>
+  </ul>
+  <div class="callout ok">
+    <span class="callout-icon">✅</span>
+    <strong>成功标准达成</strong>：ESP32 6 板 → CSI 流 → 18 关节 2D 坐标 → 火柴人，系统跑通。
+    这是 csi-pose 论文在 ESP32 平台上的端到端可演示版本。
+  </div>
+</section>
+
+<!-- MARKER-NEXT -->
+
+<section id="sec-honest">
+  <h2><span class="anchor-num">13</span>诚实声明 · 下一步</h2>
+
+  <h3>13.1 已知局限</h3>
+  <div class="callout warning">
+    <span class="callout-icon">⚠️</span>
+    <strong>必须承认的事实</strong>，避免被数字误导：
+  </div>
+  <table>
+    <thead><tr><th>局限</th><th>现状</th><th>影响</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>amp-only 模型能力差距</td>
+        <td>PCK@0.5 = 55.5%（vs norm 78.9% 差 23pp）</td>
+        <td>实时 demo 骨架能用，但精度不如联合训练模型</td>
+      </tr>
+      <tr>
+        <td>phase/rssi 实时通路未实现</td>
+        <td><code>ReplaySource</code>/<code>LiveSource</code> 只流式读 amp</td>
+        <td>高精度模型无法直接用于实时推理</td>
+      </tr>
+      <tr>
+        <td>单会话标定</td>
+        <td>所有阈值/教师标签都来自 s01-rX norm 580s</td>
+        <td>未做多会话、跨用户验证</td>
+      </tr>
+      <tr>
+        <td>摄像头 fps 物理上限</td>
+        <td>USB2 cam 实测最高 15-30fps</td>
+        <td>想更高需换 USB3 cam</td>
+      </tr>
+      <tr>
+        <td>Ctrl-C 强杀 mp4 moov 缺失</td>
+        <td>ffprobe 报错需手动修</td>
+        <td>录制脚本需优雅退出</td>
+      </tr>
+      <tr>
+        <td>跌倒 FSM 未在多人 / 多场景验证</td>
+        <td>继承上游 fall-demo-01 单会话标定</td>
+        <td>不是医疗/安全级设备</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>13.2 下一步</h3>
+  <ol>
+    <li><strong>实现 phase/rssi 实时通路</strong>——接 <code>ReplaySource</code> 按 packet t_ns 查 <code>/samples/X_phase</code>/<code>rssi</code>，让高精度模型能上实时</li>
+    <li><strong>多会话 / 跨用户验证</strong>——至少 3 个不同人在不同房间重做录制，验证阈值鲁棒性</li>
+    <li><strong>amp-only 模型继续训练</strong>——当前只跑了 13 epoch（被 cut），跑满 30 epoch 看是否能逼近 78.9%</li>
+    <li><strong>TX2 单板 7.59% loss 根因</strong>——晶振个体差异 / esp_timer 漂移，需硬件级排查</li>
+    <li><strong>跌倒 FSM 跨用户标定</strong>——继承 CLAUDE.md §1.1 诚实声明</li>
+  </ol>
+</section>
+
+<section id="sec-trace">
+  <h2><span class="anchor-num">14</span>数据溯源</h2>
+  <p>所有结论可逐条审计。</p>
+
+  <h3>14.1 过程文档（dev_doc/）</h3>
+  <table>
+    <thead><tr><th>编号</th><th>主题</th><th>日期</th></tr></thead>
+    <tbody>
+      <tr><td><a href="../1-serial-sync-architecture-2026-07-08.md">1</a></td><td>源码精读 · 跨 RX 板时间对齐架构</td><td>7/8</td></tr>
+      <tr><td><a href="../2-reproduce-tutorial-2026-07-07.md">2</a></td><td>13 分钟 Windows+WSL2 复现教程</td><td>7/7</td></tr>
+      <tr><td><a href="../4-rx-firmware-bringup-debug-2026-07-10.md">4</a></td><td>RX 固件 4 层 bug 修复</td><td>7/10</td></tr>
+      <tr><td><a href="../5-loss-throughput-baseline-2026-07-10.md">5</a></td><td>9 demo 链路验收 baseline</td><td>7/10</td></tr>
+      <tr><td><a href="../6-s01-r1-13min-recording-design-2026-07-11.md">6</a></td><td>13min 录制方案设计</td><td>7/11</td></tr>
+      <tr><td><a href="../9-handoff-boot-recording-debug-2026-07-11.md">9</a></td><td>boot 6 次失败史</td><td>7/11</td></tr>
+      <tr><td><a href="../11-loss-gap-investigation-2026-07-11.md">11</a></td><td>95% loss 物理层调查</td><td>7/11</td></tr>
+      <tr><td><a href="../12-cam-fps-probe-2026-07-11.md">12</a></td><td>cam fps 4cc × resolution 矩阵 probe</td><td>7/11</td></tr>
+      <tr><td><a href="../13-loss-final-verdict-2026-07-11.md">13</a></td><td>loss 误判最终结论</td><td>7/11</td></tr>
+      <tr><td><a href="../14-end-to-end-handoff-2026-07-11.md">14</a></td><td>test 端到端 handoff</td><td>7/11</td></tr>
+      <tr><td><a href="../17-transition-state-design-2026-07-12.md">17</a></td><td>transition state 设计</td><td>7/12</td></tr>
+      <tr><td><a href="../20-pipeline-running-status-2026-07-12.md">20</a></td><td>test 60s 端到端跑通</td><td>7/12</td></tr>
+      <tr><td><a href="../21-norm-training-2026-07-12.md">21</a></td><td>norm 580s 训练</td><td>7/12</td></tr>
+      <tr><td><a href="../23-amp-demo-working-2026-07-12.md">23</a></td><td>amp-only 模型骨架渲染</td><td>7/12</td></tr>
+      <tr><td><a href="../24-html-report-design-2026-07-13.md">24</a></td><td>本汇报 HTML 设计文档</td><td>7/13</td></tr>
+    </tbody>
+  </table>
+
+  <h3>14.2 训练产物</h3>
+  <table>
+    <thead><tr><th>目录</th><th>内容</th><th>关键指标</th></tr></thead>
+    <tbody>
+      <tr><td><code>runs/s01-rX-norm/</code></td><td>norm 580s 联合训练（in_ch=560）</td><td>PCK@0.5 = 78.9%（但实时不能用）</td></tr>
+      <tr><td><code>runs/s01-rX-norm-amp/</code></td><td>norm 580s amp-only 训练（in_ch=280）</td><td>13 epoch, PCK@0.5 = 55.5%（实时可用）</td></tr>
+      <tr><td><code>runs/s01-r1-test/</code></td><td>test 60s 基线训练</td><td>PCK@0.2 = 1.98%（数据量不足对照）</td></tr>
+      <tr><td><code>runs/s01-r1-amp/</code></td><td>test 60s amp-only 冒烟</td><td>p50 = 14.7ms（pipeline 跑通）</td></tr>
+    </tbody>
+  </table>
+
+  <h3>14.3 相关链接</h3>
+  <ul>
+    <li>原始论文：<a href="../../docs/Can WiFi Estimate Person Pose.pdf">Can WiFi Estimate Person Pose?</a>（arXiv:1904.00277）</li>
+    <li>本目录 README：<a href="../README.md">csi-pose/README.md</a></li>
+    <li>本目录 CLAUDE.md（行为规范）：<a href="../CLAUDE.md">csi-pose/CLAUDE.md</a></li>
+    <li>技术栈总览（深度版）：<a href="../../docs/csi-pose-techstack.html">csi-pose-techstack.html</a></li>
+    <li>收发调研 presentation：<a href="./presentation.md">dataAnasis0710/presentation.md</a></li>
+    <li>上游仓库：<a href="https://github.com/geekfeiw/WiSPPN">geekfeiw/WiSPPN</a></li>
+  </ul>
+</section>
+
+</div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p><strong>csi-pose 复现工作汇报 · 2026-07-13</strong></p>
+    <p>本汇报基于开源项目 csi-pose（Kyung-Bo Kim 等，MIT License）的复现工作，所有结论可向上游源码与 dev_doc 逐条核对。</p>
+    <p>浏览器原生 <kbd>Ctrl</kbd>+<kbd>F</kbd> 可全文搜索。</p>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,6 @@
+# train-norm.yaml — s01-rX norm session (13 segments 580s, ~10min recording).
+# 7651 train / 1876 val (10× test mode). aug + rssi + phase per dev_doc/20 §5.
+sessions:
+  - {h5: data/processed/s01-rX/s01-rX-20260712-164531-train.h5, role: train, type: example-t80}
+  - {h5: data/processed/s01-rX/s01-rX-20260712-164531-val.h5,   role: val,   type: example-v20}
+hyper: {batch: 32, epochs: 30, warmup: 2, lr: 1.0e-3, wd: 1.0e-4, knn_k: 5, seed: 0}

@@ -35,7 +35,7 @@ def _banner(img, present, fall_state, hud):
     color = {"IDLE": (80, 80, 80), "IMPACT": (0, 160, 255),
              "ALARM": (0, 0, 230)}[fall_state]
     cv2.rectangle(img, (0, 0), (img.shape[1], 28), color, -1)
-    tag = " RANDOM" if hud["random"] else ""
+    tag = " RANDOM" if hud["random"] else (" DIAG" if hud.get("diag") else "")
     cv2.putText(img, f"{'PRESENT' if present else 'ABSENT'} | {fall_state}{tag}",
                 (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
     txt = (f"fps {hud['fps']:.1f}  infer {hud['infer_ms']:.1f}ms  "
@@ -47,15 +47,26 @@ def _banner(img, present, fall_state, hud):
 def render(video_frame, xy_norm, c, *, present, fall_state, hud):
     """video_frame=None -> canvas only. ndarray -> [video+skeleton | canvas] horizontal concat.
 
-    hud required 6 keys: fps·infer_ms·e2e_ms·drop·motion·random."""
+    hud required 6 keys: fps·infer_ms·e2e_ms·drop·motion·random. hud['diag'] (bool) is optional
+    and is consumed only for the banner tag — skeleton logic is unchanged."""
     W, H = CANVAS_WH
     canvas = np.zeros((H, W, 3), np.uint8)
     if present and xy_norm is not None:
         _draw_skeleton(canvas, xy_norm, c, W, H)
+        if hud.get("diag"):
+            # dev_doc/21 §5: diag-mode skeleton is a placeholder — draw a giant diagonal stripe
+            # so the user can't mistake it for a real prediction. Always under the skeleton.
+            cv2.line(canvas, (0, 0), (W - 1, H - 1), (120, 120, 120), 1)
+            cv2.putText(canvas, "PRED-INVALID: --diag-fill-missing placeholder",
+                        (8, H - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (120, 120, 120), 1)
     _banner(canvas, present, fall_state, hud)
     if video_frame is None:
         return canvas
     vf = cv2.resize(video_frame, (W, H))
     if present and xy_norm is not None:
         _draw_skeleton(vf, xy_norm, c, W, H)
+        if hud.get("diag"):
+            cv2.line(vf, (0, 0), (W - 1, H - 1), (120, 120, 120), 1)
+            cv2.putText(vf, "PRED-INVALID: --diag-fill-missing placeholder",
+                        (8, H - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (120, 120, 120), 1)
     return np.hstack([vf, canvas])
